@@ -80,6 +80,9 @@ Arguments:
         -x | --debug)
             DEBUG=1
             ;;
+        --deploy-local)
+            DEPLOY_LOCAL=true
+            ;;
         --with-testnet-keys)
             TESTNET_KEYS="${REPO_ROOT}/testnet/config/ssh_authorized_keys/admin"
             ;;
@@ -104,6 +107,7 @@ WHITELIST="${WHITELIST:=}"
 DKG_INTERVAL_LENGTH="${DKG_INTERVAL_LENGTH:=-1}"
 # Negative value means unset (default will be used)
 MAX_INGRESS_BYTES_PER_MESSAGE="${MAX_INGRESS_BYTES_PER_MESSAGE:=-1}"
+DEPLOY_LOCAL=${DEPLOY_LOCAL:-false}
 
 if [[ -z "${GIT_REVISION}" ]]; then
     echo "Please provide the GIT_REVISION as env. variable or the command line with --git-revision=<value>"
@@ -182,8 +186,12 @@ function prepare_build_directories() {
 }
 
 function download_registry_canisters() {
-    "${REPO_ROOT}"/gitlab-ci/src/artifacts/rclone_download.py \
-        --git-rev "${GIT_REVISION}" --remote-path=canisters --out="${IC_PREP_DIR}/canisters"
+    if ${DEPLOY_LOCAL} ; then
+        cp -r "${REPO_ROOT}"/bazel-bin/publish/canisters/  "${IC_PREP_DIR}/canisters"
+    else
+        "${REPO_ROOT}"/gitlab-ci/src/artifacts/rclone_download.py \
+           --git-rev "$GIT_REVISION" --remote-path=canisters --out="${IC_PREP_DIR}/canisters"
+    fi
 
     find "${IC_PREP_DIR}/canisters/" -name "*.gz" -print0 | xargs -P100 -0I{} bash -c "gunzip -f {}"
 
@@ -191,8 +199,12 @@ function download_registry_canisters() {
 }
 
 function download_binaries() {
-    "${REPO_ROOT}"/gitlab-ci/src/artifacts/rclone_download.py \
-        --git-rev "${GIT_REVISION}" --remote-path=release --out="${IC_PREP_DIR}/bin"
+    if ${DEPLOY_LOCAL} ; then
+       cp -r "${REPO_ROOT}"/bazel-bin/publish/binaries/  "${IC_PREP_DIR}/bin"
+    else
+       "${REPO_ROOT}"/gitlab-ci/src/artifacts/rclone_download.py \
+         --git-rev "$GIT_REVISION" --remote-path=release --out="${IC_PREP_DIR}/bin"
+    fi
 
     find "${IC_PREP_DIR}/bin/" -name "*.gz" -print0 | xargs -P100 -0I{} bash -c "gunzip -f {} && basename {} .gz | xargs -I[] chmod +x ${IC_PREP_DIR}/bin/[]"
 
@@ -233,6 +245,12 @@ function generate_prep_material() {
     # It is used for both the node operator and its corresponding provider.
     NODE_OPERATOR_ID="5o66h-77qch-43oup-7aaui-kz5ty-tww4j-t2wmx-e3lym-cbtct-l3gpw-wae"
 
+    if ${DEPLOY_LOCAL}; then
+        PREP_ALLOW_EMPTY_UPDATE="--allow-empty-update-image"
+    else
+        PREP_ALLOW_EMPTY_UPDATE=""
+    fi
+
     set -x
     # Generate key material for assigned nodes
     # See subnet_crypto_install, line 5
@@ -249,6 +267,7 @@ function generate_prep_material() {
         "--initial-node-provider" "${NODE_OPERATOR_ID}" \
         "--ssh-readonly-access-file" "${TESTNET_KEYS}" \
         "--ssh-backup-access-file" "${TESTNET_KEYS}" \
+        ${PREP_ALLOW_EMPTY_UPDATE} \
         ${ALLOW_SPECIFIED_IDS:-}
     set +x
 
