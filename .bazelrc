@@ -23,11 +23,11 @@ build --strip=never
 
 build --strategy_regexp=ic-os/.*=local
 
-build --remote_cache=bazel-remote.idx.dfinity.network
-build --experimental_remote_cache_async
-build --incompatible_remote_build_event_upload_respect_no_cache
-build --remote_timeout=30s # Default is 60s.
-build:ci --remote_timeout=5m # Default is 60s.
+#build --remote_cache=bazel-remote.idx.dfinity.network
+#build --experimental_remote_cache_async
+#build --incompatible_remote_build_event_upload_respect_no_cache
+#build --remote_timeout=30s # Default is 60s.
+#build:ci --remote_timeout=5m # Default is 60s.
 # TODO: re-enable after fixing the error like this:
 # `Failed to fetch file with hash 'xxx' because it does not exist remotely. --remote_download_outputs=minimal does not work if your remote cache evicts files during builds.`
 # Probably disabling `--experimental_remote_cache_async` will help
@@ -36,12 +36,12 @@ build:ci --remote_timeout=5m # Default is 60s.
 
 # Does not produce valid JSON. See https://github.com/bazelbuild/bazel/issues/14209
 build --execution_log_json_file=bazel-build-log.json
-build --build_event_binary_file=bazel-bep.pb
+#build --build_event_binary_file=bazel-bep.pb
 
-build --bes_results_url=https://dash.idx.dfinity.network/invocation/
-build --bes_backend=bes.idx.dfinity.network
-build --bes_timeout=30s # Defauilt is no timeout.
-build --bes_upload_mode=fully_async
+#build --bes_results_url=https://dash.idx.dfinity.network/invocation/
+#build --bes_backend=bes.idx.dfinity.network
+#build --bes_timeout=30s # Defauilt is no timeout.
+#build --bes_upload_mode=fully_async
 # TODO(IDX-2718): Uncomment when bes service will be stable.
 #build:ci --bes_timeout=180s # Defauilt is no timeout.
 #build:ci --bes_upload_mode=wait_for_upload_complete

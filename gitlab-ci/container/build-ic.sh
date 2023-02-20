@@ -33,6 +33,8 @@ export BUILD_BIN=false
 export BUILD_CAN=false
 export BUILD_IMG=false
 export RELEASE=true
+export BUILD_DEBUG_IMG=false
+export BUILD_STATIC_SSL=false
 
 if [ "$#" == 0 ]; then
     echo_red "ERROR: Please specify one of '-b', '-c' or '-i'" >&2
@@ -40,7 +42,7 @@ if [ "$#" == 0 ]; then
     usage && exit 1
 fi
 
-while getopts ':bcinh-:' OPT; do
+while getopts ':bcindsh-:' OPT; do
     if [ "$OPT" = "-" ]; then
         OPT="${OPTARG%%=*}"
         OPTARG="${OPTARG#$OPT}"
@@ -52,6 +54,8 @@ while getopts ':bcinh-:' OPT; do
         c | canisters) BUILD_CAN=true ;;
         i | icos) BUILD_IMG=true ;;
         n | non-release | no-release | norelease) RELEASE=false ;;
+        d | debugbuild) BUILD_DEBUG_IMG=true ;;
+        s | staticssl) BUILD_STATIC_SSL=true ;;
         ??*) echo_red "Invalid option --$OPT" && usage && exit 1 ;;
         ?) echo_red "Invalid command option.\n" && usage && exit 1 ;;
     esac
@@ -94,7 +98,7 @@ validate_build_env() {
 
     if [ -n "$(git status --porcelain)" ]; then
         echo_red "Git working directory is not clean! Clean it and retry."
-        exit 1
+        #exit 1
     fi
 
     if [ "$(uname)" != "Linux" ]; then
@@ -108,18 +112,24 @@ echo_green "Validating build environment"
 validate_build_env
 
 echo_blue "Purging artifact directories"
-rm -rf "$BINARIES_DIR_FULL"
-rm -rf "$CANISTERS_DIR_FULL"
-rm -rf "$DISK_DIR_FULL"
+#rm -rf "$BINARIES_DIR_FULL"
+#rm -rf "$CANISTERS_DIR_FULL"
+#rm -rf "$DISK_DIR_FULL"
+
+BAZEL_ENV=""
+if $BUILD_STATIC_SSL
+then
+BAZEL_ENV+="DFINITY_OPENSSL_STATIC=1 "
+fi
 
 echo_green "Building selected IC artifacts"
-BAZEL_CMD="bazel build --config=local --ic_version='$VERSION' --ic_version_rc_only='$IC_VERSION_RC_ONLY'"
+BAZEL_CMD="$BAZEL_ENV bazel build --config=local --ic_version='$VERSION' --ic_version_rc_only='$IC_VERSION_RC_ONLY'"
 BUILD_BINARIES_CMD=$(
     cat <<-END
     # build binaries
     mkdir -p "$BINARIES_DIR"
     $BAZEL_CMD //publish/binaries
-    bazel cquery --output=files //publish/binaries | xargs -I {} cp {} "$BINARIES_DIR"
+    bazel cquery --output=files //publish/binaries | xargs -I {} cp -f {} "$BINARIES_DIR"
 END
 )
 
@@ -128,24 +138,32 @@ BUILD_CANISTERS_CMD=$(
     # build canisters
     mkdir -p "$CANISTERS_DIR"
     $BAZEL_CMD //publish/canisters
-    bazel cquery --output=files //publish/canisters | xargs -I {} cp {} "$CANISTERS_DIR"
+    bazel cquery --output=files //publish/canisters | xargs -I {} cp -f {} "$CANISTERS_DIR"
 END
 )
+
+if  $BUILD_DEBUG_IMG
+then
+    IMG_TYPE=dev
+else
+    IMG_TYPE=prod
+fi
 
 BUILD_IMAGES_CMD=$(
     cat <<-END
     # build guestos images
     mkdir -p "${DISK_DIR}/guestos"
-    $BAZEL_CMD //ic-os/guestos/envs/prod
-    bazel cquery --output=files //ic-os/guestos/envs/prod | xargs -I {} cp {} "${DISK_DIR}/guestos"
+    $BAZEL_CMD //ic-os/guestos/envs/${IMG_TYPE}
+    bazel cquery --output=files //ic-os/guestos/envs/${IMG_TYPE} | xargs -I {} cp -f {} "${DISK_DIR}/guestos"
+
     # build hostos images
-    mkdir -p "${DISK_DIR}/hostos"
-    $BAZEL_CMD //ic-os/hostos/envs/prod
-    bazel cquery --output=files //ic-os/hostos/envs/prod | xargs -I {} cp {} "${DISK_DIR}/hostos"
+    #mkdir -p "${DISK_DIR}/hostos"
+    #$BAZEL_CMD //ic-os/hostos/envs/${IMG_TYPE}
+    #bazel cquery --output=files //ic-os/hostos/envs/${IMG_TYPE} | xargs -I {} cp -f {} "${DISK_DIR}/hostos"
     # build setupos images
-    mkdir -p "${DISK_DIR}/setupos"
-    $BAZEL_CMD //ic-os/setupos/envs/prod
-    bazel cquery --output=files //ic-os/setupos/envs/prod | xargs -I {} cp {} "${DISK_DIR}/setupos"
+    #mkdir -p "${DISK_DIR}/setupos"
+    #$BAZEL_CMD //ic-os/setupos/envs/${IMG_TYPE}
+    #bazel cquery --output=files //ic-os/setupos/envs/${IMG_TYPE} | xargs -I {} cp -f {} "${DISK_DIR}/setupos"
 END
 )
 BUILD_CMD=""
@@ -193,16 +211,22 @@ if "$BUILD_IMG"; then
     # shellcheck disable=SC2035
     sha256sum -b *.tar.* | tee SHA256SUMS
     popd
-    echo_green "##### HOSTOS SHA256SUMS #####"
-    pushd "$DISK_DIR_FULL/hostos"
-    # shellcheck disable=SC2035
-    sha256sum -b *.tar.* | tee SHA256SUMS
-    popd
-    echo_green "##### SETUPOS SHA256SUMS #####"
-    pushd "$DISK_DIR_FULL/setupos"
-    # shellcheck disable=SC2035
-    sha256sum -b *.tar.* | tee SHA256SUMS
-    popd
+
+    if [ -d "$DISK_DIR_FULL/hostos" ]; then
+        echo_green "##### HOSTOS SHA256SUMS #####"
+        pushd "$DISK_DIR_FULL/hostos"
+        # shellcheck disable=SC2035
+        sha256sum -b *.tar.* | tee SHA256SUMS
+        popd
+    fi
+
+    if [ -d "$DISK_DIR_FULL/setupos" ]; then
+        echo_green "##### SETUPOS SHA256SUMS #####"
+        pushd "$DISK_DIR_FULL/setupos"
+        # shellcheck disable=SC2035
+        sha256sum -b *.tar.* | tee SHA256SUMS
+        popd
+    fi
 fi
 
 echo_green "Build complete for revision $(git rev-parse HEAD)"

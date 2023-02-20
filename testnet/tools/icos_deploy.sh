@@ -109,6 +109,9 @@ while [ $# -gt 0 ]; do
         --no-boundary-nodes)
             USE_BOUNDARY_NODES="false"
             ;;
+	--deploy-local)
+            DEPLOY_LOCAL=true
+            ;;
         --with-testnet-keys)
             WITH_TESTNET_KEYS="--with-testnet-keys"
             ;;
@@ -132,6 +135,13 @@ if [[ -z "${deployment:-}" ]]; then
     exit_usage
 fi
 
+DEPLOY_LOCAL=${DEPLOY_LOCAL=:-false}
+DEPLOY_LOCAL_ARGS=""
+if [[ ${DEPLOY_LOCAL} ]]; then
+    DEPLOY_LOCAL_ARGS=" --deploy-local "
+fi
+
+
 # Negative DKG value means unset (default will be used)
 DKG_INTERVAL_LENGTH="${DKG_INTERVAL_LENGTH:=-1}"
 # Negative value means unset (default will be used)
@@ -146,7 +156,7 @@ if [[ ! -f ${hosts_ini_file_path} ]]; then
 fi
 
 for i in {1..60}; do
-    if disk_image_exists; then
+    if [ ${DEPLOY_LOCAL}  -o disk_image_exists ]; then
         echo "Disk image found for ${GIT_REVISION}"
         break
     fi
@@ -249,7 +259,8 @@ pushd "${REPO_ROOT}/ic-os/guestos"
     --max-ingress-bytes-per-message=${MAX_INGRESS_BYTES_PER_MESSAGE} \
     --output-nns-public-key="${MEDIA_PATH}/nns-public-key.pem" \
     ${WITH_TESTNET_KEYS:-} \
-    ${ALLOW_SPECIFIED_IDS:-}
+    ${ALLOW_SPECIFIED_IDS:-} \
+    ${DEPLOY_LOCAL_ARGS:-}
 popd
 
 SCP_PREFIX=""
@@ -286,7 +297,6 @@ fi
 echo >&2 "$(date --rfc-3339=seconds): Running build-deployment.sh"
 
 "${REPO_ROOT}"/ic-os/boundary-guestos/scripts/build-deployment.sh \
-    --env=test \
     --input="${MEDIA_PATH}/${deployment}.json" \
     --output="${BN_MEDIA_PATH}" \
     --certdir="${BN_MEDIA_PATH}/certs" \

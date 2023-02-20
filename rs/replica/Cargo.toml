@@ -25,6 +25,7 @@ ic-https-outcalls-adapter-client = { path = "../https_outcalls/client" }
 ic-icos-sev = { path = "../ic_os/sev" }
 ic-interfaces = { path = "../interfaces" }
 ic-interfaces-bitcoin-adapter-client = { path = "../interfaces/bitcoin_adapter_client" }
+ic-interfaces-state-manager = { path = "../interfaces/state_manager" }
 ic-interfaces-certified-stream-store = { path = "../interfaces/certified_stream_store" }
 ic-interfaces-p2p = { path = "../interfaces/p2p" }
 ic-interfaces-registry = { path = "../interfaces/registry" }
