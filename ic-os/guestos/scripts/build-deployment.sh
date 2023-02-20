@@ -80,6 +80,9 @@ Arguments:
         -x | --debug)
             DEBUG=1
             ;;
+        --deploy-local)
+            DEPLOY_LOCAL=true
+            ;;
         --with-testnet-keys)
             TESTNET_KEYS="${REPO_ROOT}/testnet/config/ssh_authorized_keys/admin"
             ;;
@@ -101,6 +104,7 @@ WHITELIST="${WHITELIST:=}"
 DKG_INTERVAL_LENGTH="${DKG_INTERVAL_LENGTH:=-1}"
 # Negative value means unset (default will be used)
 MAX_INGRESS_BYTES_PER_MESSAGE="${MAX_INGRESS_BYTES_PER_MESSAGE:=-1}"
+DEPLOY_LOCAL=${DEPLOY_LOCAL:-false}
 
 if [[ -z "$GIT_REVISION" ]]; then
     echo "Please provide the GIT_REVISION as env. variable or the command line with --git-revision=<value>"
@@ -179,8 +183,12 @@ function cleanup_rootfs() {
 }
 
 function download_registry_canisters() {
-    "${REPO_ROOT}"/gitlab-ci/src/artifacts/rclone_download.py \
-        --git-rev "$GIT_REVISION" --remote-path=canisters --out="${IC_PREP_DIR}/canisters"
+    if ${DEPLOY_LOCAL} ; then
+        cp -r "${REPO_ROOT}"/bazel-bin/publish/canisters/  "${IC_PREP_DIR}/canisters"
+    else
+       "${REPO_ROOT}"/gitlab-ci/src/artifacts/rclone_download.py \
+           --git-rev "$GIT_REVISION" --remote-path=canisters --out="${IC_PREP_DIR}/canisters"
+    fi
 
     find "${IC_PREP_DIR}/canisters/" -name "*.gz" -print0 | xargs -P100 -0I{} bash -c "gunzip -f {}"
 
@@ -188,8 +196,12 @@ function download_registry_canisters() {
 }
 
 function download_binaries() {
-    "${REPO_ROOT}"/gitlab-ci/src/artifacts/rclone_download.py \
-        --git-rev "$GIT_REVISION" --remote-path=release --out="${IC_PREP_DIR}/bin"
+    if ${DEPLOY_LOCAL} ; then
+       cp -r "${REPO_ROOT}"/bazel-bin/publish/binaries/  "${IC_PREP_DIR}/bin"
+    else
+       "${REPO_ROOT}"/gitlab-ci/src/artifacts/rclone_download.py \
+         --git-rev "$GIT_REVISION" --remote-path=release --out="${IC_PREP_DIR}/bin"
+    fi
 
     find "${IC_PREP_DIR}/bin/" -name "*.gz" -print0 | xargs -P100 -0I{} bash -c "gunzip -f {} && basename {} .gz | xargs -I[] chmod +x ${IC_PREP_DIR}/bin/[]"
 
@@ -199,6 +211,9 @@ function download_binaries() {
 
 function generate_subnet_config() {
     # Start hashing in the background
+    rm -rf "$TEMPDIR/REPLICA_HASH"
+    rm -rf "$TEMPDIR/NM_HASH"
+
     mkfifo "$TEMPDIR/REPLICA_HASH"
     mkfifo "$TEMPDIR/NM_HASH"
     sha256sum "${IC_PREP_DIR}/bin/replica" | cut -d " " -f 1 >"$TEMPDIR/REPLICA_HASH" &
@@ -243,6 +258,12 @@ function generate_subnet_config() {
     REPLICA_HASH=$(cat "$TEMPDIR/REPLICA_HASH")
     NM_HASH=$(cat "$TEMPDIR/NM_HASH")
 
+    if ${DEPLOY_LOCAL}; then
+	PREP_ALLOW_EMPTY_UPDATE="--allow-empty-update-image"
+    else
+	PREP_ALLOW_EMPTY_UPDATE=""
+    fi
+
     set -x
     # Generate key material for assigned nodes
     # See subnet_crypto_install, line 5
@@ -262,6 +283,7 @@ function generate_subnet_config() {
         "--initial-node-operator" "${NODE_OPERATOR_ID}" \
         "--initial-node-provider" "${NODE_OPERATOR_ID}" \
         "--ssh-readonly-access-file" "${TESTNET_KEYS}" \
+	${PREP_ALLOW_EMPTY_UPDATE} \
         "--ssh-backup-access-file" "${TESTNET_KEYS}"
     set +x
 }
@@ -483,7 +505,7 @@ function main() {
     copy_node_provider_key
     build_tarball
     build_removable_media
-    remove_temporary_directories
+    #remove_temporary_directories
     cleanup_rootfs
 
 }
