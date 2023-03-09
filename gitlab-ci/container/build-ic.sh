@@ -130,7 +130,7 @@ BUILD_CANISTERS_CMD=$(
 END
 )
 
-if [[ $BUILD_DEBUG_IMG ]]
+if  $BUILD_DEBUG_IMG
 then
     IMG_TYPE=dev
 else
