@@ -2,7 +2,10 @@
 //! selections of ingress and xnet messages, and DKGs computed for other
 //! subnets.
 
-use crate::consensus::metrics::{BatchStats, BlockStats};
+use crate::consensus::{
+    eth::EthMessageRouting,
+    metrics::{BatchStats, BlockStats},
+};
 use crate::ecdsa::utils::EcdsaBlockReaderImpl;
 use ic_artifact_pool::consensus_pool::build_consensus_block_chain;
 use ic_consensus_utils::pool_reader::PoolReader;
@@ -27,10 +30,12 @@ use ic_types::{
         canister_threshold_sig::MasterEcdsaPublicKey,
         threshold_sig::ni_dkg::{NiDkgId, NiDkgTag, NiDkgTranscript},
     },
+    eth::EthExecutionDelivery,
     messages::{CallbackId, Payload, RejectContext, Response},
     CanisterId, Cycles, Height, PrincipalId, Randomness, ReplicaVersion, SubnetId,
 };
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 /// Deliver all finalized blocks from
 /// `message_routing.expected_batch_height` to `finalized_height` via
@@ -48,6 +53,7 @@ pub fn deliver_batches(
     // deliver all bathes up to the height `min(h, finalized_height)`.
     max_batch_height_to_deliver: Option<Height>,
     result_processor: Option<&dyn Fn(&Result<(), MessageRoutingError>, BlockStats, BatchStats)>,
+    eth: Option<Arc<dyn EthMessageRouting>>,
 ) -> Result<Height, MessageRoutingError> {
     let finalized_height = pool.get_finalized_height();
     // If `max_batch_height_to_deliver` is specified and smaller than
@@ -61,6 +67,7 @@ pub fn deliver_batches(
         return Ok(Height::from(0));
     }
     let mut last_delivered_batch_height = h.decrement();
+    let mut eth_batch = Vec::new();
     while h <= target_height {
         match (pool.get_finalized_block(h), pool.get_random_tape(h)) {
             (Some(block), Some(tape)) => {
@@ -128,13 +135,15 @@ pub fn deliver_batches(
                 // limit.  In this case we also want to have a checkpoint for that last height.
                 let persist_batch = Some(h) == max_batch_height_to_deliver;
                 let requires_full_state_hash = block.payload.is_summary() || persist_batch;
-                let (batch_messages, batch_stats) = if block.payload.is_summary() {
-                    (BatchMessages::default(), BatchStats::empty(h))
+                let (batch_messages, batch_stats, eth_payload) = if block.payload.is_summary() {
+                    (BatchMessages::default(), BatchStats::empty(h), None)
                 } else {
-                    let batch_payload = BlockPayload::from(block.payload).into_data().batch;
+                    let data_payload = BlockPayload::from(block.payload).into_data();
+                    let eth_payload = data_payload.eth.clone();
+                    let batch_payload = data_payload.batch;
                     let batch_stats = BatchStats::from_payload(h, &batch_payload);
                     let batch_messages = batch_payload.into_messages().unwrap();
-                    (batch_messages, batch_stats)
+                    (batch_messages, batch_stats, eth_payload)
                 };
 
                 let batch = Batch {
@@ -162,6 +171,13 @@ pub fn deliver_batches(
                 if let Err(err) = result {
                     warn!(every_n_seconds => 5, log, "Batch delivery failed: {:?}", err);
                     return Err(err);
+                } else {
+                    if let Some(eth) = eth_payload {
+                        eth_batch.push(EthExecutionDelivery {
+                            height: h.get(),
+                            payload: eth,
+                        });
+                    }
                 }
                 last_delivered_batch_height = h;
                 h = h.increment();
@@ -182,6 +198,11 @@ pub fn deliver_batches(
                 );
                 break;
             }
+        }
+    }
+    if !eth_batch.is_empty() {
+        if let Some(eth) = eth {
+            eth.deliver_batch(eth_batch);
         }
     }
     Ok(last_delivered_batch_height)

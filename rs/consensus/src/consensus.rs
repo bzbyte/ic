@@ -5,6 +5,7 @@ pub mod batch_delivery;
 pub(crate) mod block_maker;
 mod catchup_package_maker;
 pub mod dkg_key_manager;
+mod eth;
 mod finalizer;
 mod malicious_consensus;
 pub(crate) mod metrics;
@@ -31,6 +32,7 @@ use crate::consensus::{
     block_maker::BlockMaker,
     catchup_package_maker::CatchUpPackageMaker,
     dkg_key_manager::DkgKeyManager,
+    eth::build_eth_stubs,
     finalizer::Finalizer,
     metrics::{ConsensusGossipMetrics, ConsensusMetrics},
     notary::Notary,
@@ -146,6 +148,7 @@ impl ConsensusImpl {
         logger: ReplicaLogger,
         local_store_time_reader: Arc<dyn LocalStoreCertifiedTimeReader>,
     ) -> Self {
+        let (eth_payload_builder, eth_message_routing) = build_eth_stubs(logger.clone());
         let payload_builder = Arc::new(PayloadBuilderImpl::new(
             replica_config.subnet_id,
             registry_client.clone(),
@@ -187,6 +190,7 @@ impl ConsensusImpl {
                 crypto.clone(),
                 message_routing.clone(),
                 ingress_selector,
+                Some(eth_message_routing),
                 logger.clone(),
                 metrics_registry.clone(),
             ),
@@ -221,6 +225,7 @@ impl ConsensusImpl {
                 dkg_pool.clone(),
                 ecdsa_pool.clone(),
                 state_manager.clone(),
+                Some(eth_payload_builder),
                 stable_registry_version_age,
                 metrics_registry.clone(),
                 logger.clone(),
