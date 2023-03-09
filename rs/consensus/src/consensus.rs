@@ -6,6 +6,7 @@ pub(crate) mod block_maker;
 mod catchup_package_maker;
 pub(crate) mod crypto;
 pub mod dkg_key_manager;
+mod eth;
 mod finalizer;
 mod malicious_consensus;
 pub(crate) mod membership;

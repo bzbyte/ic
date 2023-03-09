@@ -1,6 +1,7 @@
 #![deny(missing_docs)]
 use crate::{
     consensus::{
+        eth::{new_eth_payload_builder, EthPayloadBuilder},
         membership::Membership,
         metrics::{BlockMakerMetrics, EcdsaPayloadMetrics},
         payload_builder::PayloadBuilder,
@@ -81,6 +82,7 @@ pub struct BlockMaker {
     dkg_pool: Arc<RwLock<dyn DkgPool>>,
     ecdsa_pool: Arc<RwLock<dyn EcdsaPool>>,
     state_manager: Arc<dyn StateManager<State = ReplicatedState>>,
+    eth_payload_builder: Arc<dyn EthPayloadBuilder>,
     metrics: BlockMakerMetrics,
     ecdsa_payload_metrics: EcdsaPayloadMetrics,
     log: ReplicaLogger,
@@ -117,6 +119,7 @@ impl BlockMaker {
             dkg_pool,
             ecdsa_pool,
             state_manager,
+            eth_payload_builder: new_eth_payload_builder(),
             log,
             metrics: BlockMakerMetrics::new(metrics_registry.clone()),
             ecdsa_payload_metrics: EcdsaPayloadMetrics::new(metrics_registry),
@@ -341,7 +344,7 @@ impl BlockMaker {
                             batch_payload.xnet.size_bytes(),
                             batch_payload.ingress.count_bytes(),
                         );
-                        (batch_payload, new_dealings, None).into()
+                        (batch_payload, new_dealings, None, None).into()
                     } else {
                         let ecdsa_data = ecdsa::create_data_payload(
                             self.replica_config.subnet_id,
@@ -360,11 +363,19 @@ impl BlockMaker {
                         })
                         .ok()
                         .flatten();
+                        let eth_payload = self
+                            .eth_payload_builder
+                            .get_payload()
+                            .map_err(|err| {
+                                warn!(self.log, "Eth payload construction failed: {:?}", err)
+                            })
+                            .ok()
+                            .flatten();
                         self.metrics.report_byte_estimate_metrics(
                             batch_payload.xnet.size_bytes(),
                             batch_payload.ingress.count_bytes(),
                         );
-                        (batch_payload, dealings, ecdsa_data).into()
+                        (batch_payload, dealings, ecdsa_data, eth_payload).into()
                     }
                 }
             },

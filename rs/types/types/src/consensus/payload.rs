@@ -63,7 +63,10 @@ impl BlockPayload {
     pub fn is_empty(&self) -> bool {
         match self {
             BlockPayload::Data(data) => {
-                data.batch.is_empty() && data.dealings.messages.is_empty() && data.ecdsa.is_none() && data.eth.is_none()
+                data.batch.is_empty()
+                    && data.dealings.messages.is_empty()
+                    && data.ecdsa.is_none()
+                    && data.eth.is_none()
             }
             _ => false,
         }
@@ -120,7 +123,7 @@ impl BlockPayload {
     pub fn as_eth(&self) -> Option<&eth::EthPayload> {
         match self {
             BlockPayload::Data(data) => data.eth.as_ref(),
-            BlockPayload::Summary(data) => None, 
+            _ => None,
         }
     }
 
@@ -258,11 +261,19 @@ impl From<(BatchPayload, dkg::Dealings, ecdsa::Payload)> for BlockPayload {
     fn from(
         (batch, dealings, ecdsa): (BatchPayload, dkg::Dealings, ecdsa::Payload),
     ) -> BlockPayload {
+        (batch, dealings, ecdsa, None).into()
+    }
+}
+
+impl From<(BatchPayload, dkg::Dealings, ecdsa::Payload, eth::Payload)> for BlockPayload {
+    fn from(
+        (batch, dealings, ecdsa, eth): (BatchPayload, dkg::Dealings, ecdsa::Payload, eth::Payload),
+    ) -> BlockPayload {
         BlockPayload::Data(DataPayload {
             batch,
             dealings,
             ecdsa,
-            eth: None, 
+            eth,
         })
     }
 }
@@ -275,7 +286,7 @@ impl From<dkg::Payload> for BlockPayload {
                 batch: BatchPayload::default(),
                 dealings,
                 ecdsa: ecdsa::Payload::default(),
-                eth: None, 
+                eth: None,
             }),
         }
     }
