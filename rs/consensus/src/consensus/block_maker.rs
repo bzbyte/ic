@@ -1,6 +1,7 @@
 #![deny(missing_docs)]
 use crate::{
     consensus::{
+        eth::EthPayloadBuilder,
         metrics::{BlockMakerMetrics, EcdsaPayloadMetrics},
         status::{self, Status},
         ConsensusCrypto,
@@ -27,6 +28,7 @@ use ic_types::{
         RandomBeacon, Rank,
     },
     crypto::CryptoHashOf,
+    eth::EthPayload,
     replica_config::ReplicaConfig,
     time::current_time,
     CountBytes, Height, NodeId, RegistryVersion,
@@ -84,6 +86,7 @@ pub struct BlockMaker {
     // block. The older is the version, the higher is the probability, that it's universally
     // available across the subnet.
     stable_registry_version_age: Duration,
+    eth_payload_builder: Option<Arc<dyn EthPayloadBuilder>>,
 }
 
 impl BlockMaker {
@@ -99,6 +102,7 @@ impl BlockMaker {
         dkg_pool: Arc<RwLock<dyn DkgPool>>,
         ecdsa_pool: Arc<RwLock<dyn EcdsaPool>>,
         state_manager: Arc<dyn StateManager<State = ReplicatedState>>,
+        eth_payload_builder: Option<Arc<dyn EthPayloadBuilder>>,
         stable_registry_version_age: Duration,
         metrics_registry: MetricsRegistry,
         log: ReplicaLogger,
@@ -113,6 +117,7 @@ impl BlockMaker {
             dkg_pool,
             ecdsa_pool,
             state_manager,
+            eth_payload_builder,
             log,
             metrics: BlockMakerMetrics::new(metrics_registry.clone()),
             ecdsa_payload_metrics: EcdsaPayloadMetrics::new(metrics_registry),
@@ -361,7 +366,7 @@ impl BlockMaker {
                                 batch_payload.xnet.size_bytes(),
                                 batch_payload.ingress.count_bytes(),
                             );
-                            (batch_payload, dealings, ecdsa_data).into()
+                            (batch_payload, dealings, ecdsa_data, self.eth_payload()).into()
                         }
                     }
                 }
@@ -382,6 +387,17 @@ impl BlockMaker {
                 None
             }
         }
+    }
+
+    fn eth_payload(&self) -> Option<EthPayload> {
+        let eth_payload = self.eth_payload_builder.as_ref().and_then(|eth_builder| {
+            eth_builder
+                .get_payload()
+                .map_err(|err| warn!(self.log, "Eth payload construction failed: {:?}", err))
+                .ok()
+                .flatten()
+        });
+        eth_payload
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -571,6 +587,7 @@ mod tests {
                 dkg_pool.clone(),
                 ecdsa_pool.clone(),
                 state_manager.clone(),
+                None,
                 Duration::from_millis(0),
                 MetricsRegistry::new(),
                 no_op_logger(),
@@ -648,6 +665,7 @@ mod tests {
                 dkg_pool,
                 ecdsa_pool,
                 state_manager,
+                None,
                 Duration::from_millis(0),
                 MetricsRegistry::new(),
                 no_op_logger(),
@@ -905,6 +923,7 @@ mod tests {
                 dkg_pool,
                 ecdsa_pool,
                 state_manager,
+                None,
                 Duration::from_millis(0),
                 MetricsRegistry::new(),
                 no_op_logger(),

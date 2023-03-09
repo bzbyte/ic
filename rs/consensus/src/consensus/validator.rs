@@ -1025,6 +1025,7 @@ impl Validator {
                 TransientError::EcdsaPayloadValidationError,
             )
         })?;
+        // TODO: Eth payload validation goes here ...
 
         let timer = self
             .metrics
