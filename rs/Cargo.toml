@@ -333,3 +333,20 @@ jsonrpc = { git = "https://github.com/apoelstra/rust-jsonrpc", rev = "e42044d" }
 ciborium = { git = "https://github.com/enarx/ciborium", rev = "e719537c99b564c3674a56defe53713c702c6f46" }
 # This version pins prost 0.11. Please remove after the next pprof release.
 pprof = { git = "https://github.com/tikv/pprof-rs", rev = "059d3c80395c74e9f82ca1f9cbb3c013acfffb75" }
+
+warp = { git = "https://github.com/macladson/warp", rev="7e75acc368229a46a236a8c991bf251fe7fe50ef" }
+eth2_ssz = { path = "../../src-execution-layer/engineapi/consensus/ssz" }
+eth2_ssz_derive = { path = "../../src-execution-layer/engineapi/consensus/ssz_derive" }
+eth2_ssz_types = { path = "../../src-execution-layer/engineapi/consensus/ssz_types" }
+eth2_hashing = { path = "../../src-execution-layer/engineapi/crypto/eth2_hashing" }
+tree_hash = { path = "../../src-execution-layer/engineapi/consensus/tree_hash" }
+tree_hash_derive = { path = "../../src-execution-layer/engineapi/consensus/tree_hash_derive" }
+eth2_serde_utils = { path = "../../src-execution-layer/engineapi/consensus/serde_utils" }
+arbitrary = { git = "https://github.com/michaelsproul/arbitrary", rev="a572fd8743012a4f1ada5ee5968b1b3619c427ba" }
+
+[patch."https://github.com/ralexstokes/mev-rs"]
+mev-rs = { git = "https://github.com/ralexstokes//mev-rs", rev = "7813d4a4a564e0754e9aaab2d95520ba437c3889" }
+[patch."https://github.com/ralexstokes/ethereum-consensus"]
+ethereum-consensus = { git = "https://github.com/ralexstokes//ethereum-consensus", rev = "9b0ee0a8a45b968c8df5e7e64ea1c094e16f053d" }
+[patch."https://github.com/ralexstokes/ssz-rs"]
+ssz-rs = { git = "https://github.com/ralexstokes//ssz-rs", rev = "adf1a0b14cef90b9536f28ef89da1fab316465e1" }

@@ -31,6 +31,7 @@ use ic_types::{
     ReplicaVersion,
 };
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 /// Deliver all finalized blocks from
 /// `message_routing.expected_batch_height` to `finalized_height` via
@@ -48,7 +49,7 @@ pub fn deliver_batches(
     // deliver all bathes up to the height `min(h, finalized_height)`.
     max_batch_height_to_deliver: Option<Height>,
     result_processor: Option<&dyn Fn(&Result<(), MessageRoutingError>, BlockStats, BatchStats)>,
-    eth: Option<&dyn EthMessageRouting>,
+    eth: Option<Arc<dyn EthMessageRouting>>,
 ) -> Result<Height, MessageRoutingError> {
     let finalized_height = pool.get_finalized_height();
     // If `max_batch_height_to_deliver` is specified and smaller than
