@@ -157,7 +157,7 @@ impl ConsensusImpl {
         logger: ReplicaLogger,
         local_store_time_reader: Option<Arc<dyn LocalStoreCertifiedTimeReader>>,
     ) -> Self {
-        let (eth_payload_builder, eth_message_routing) = build_eth_stubs();
+        let (eth_payload_builder, eth_message_routing) = build_eth_stubs(logger.clone());
         let payload_builder = Arc::new(PayloadBuilderImpl::new(
             replica_config.subnet_id,
             registry_client.clone(),

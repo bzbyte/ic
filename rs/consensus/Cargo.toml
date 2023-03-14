@@ -26,6 +26,7 @@ ic-registry-subnet-features = { path = "../registry/subnet_features" }
 ic-protobuf = { path = "../protobuf" }
 ic-types = { path = "../types/types" }
 ic-utils = { path = "../utils" }
+bincode = "1.2.1"
 execution_layer = { path = "../../../src-execution-layer/engineapi" }
 hex = "0.4.2"
 num-integer = "0.1.41"

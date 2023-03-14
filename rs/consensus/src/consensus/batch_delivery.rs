@@ -26,7 +26,7 @@ use ic_types::{
         canister_threshold_sig::MasterEcdsaPublicKey,
         threshold_sig::ni_dkg::{NiDkgId, NiDkgTag, NiDkgTranscript},
     },
-    eth::EthExecutionPayload,
+    eth::EthExecutionDelivery,
     messages::{CallbackId, Response},
     ReplicaVersion,
 };
@@ -164,7 +164,7 @@ pub fn deliver_batches(
                     return Err(err);
                 } else {
                     if let Some(eth) = eth_payload {
-                        eth_batch.push(EthExecutionPayload {
+                        eth_batch.push(EthExecutionDelivery {
                             height: h.get(),
                             payload: eth,
                         });
