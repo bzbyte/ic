@@ -134,7 +134,7 @@ impl EthMessageRouting for EthStubImpl {
                 };
 
                 let attr = Some(PayloadAttributes::V1(PayloadAttributesV1 {
-                    timestamp: entry.payload.timestamp + 2,
+                    timestamp: entry.payload.timestamp,
                     prev_randao: Hash256::zero(),
                     suggested_fee_recipient: Address::repeat_byte(0),
                 }));
