@@ -4,14 +4,15 @@ use ic_logger::{info, ReplicaLogger};
 use ic_types::eth::{EthExecutionDelivery, EthPayload};
 
 use execution_layer::engine_api::{
-    http::HttpJsonRpc, BlockByNumberQuery, GetJsonPayloadResponse, PayloadAttributes,
-    PayloadAttributesV1, LATEST_TAG,
+    http::HttpJsonRpc, BlockByNumberQuery, GetJsonPayloadResponse, ForkchoiceState,
+    PayloadAttributes, PayloadAttributesV1, LATEST_TAG,
 };
-use execution_layer::ForkchoiceState;
-use sensitive_url::SensitiveUrl;
+use execution_layer::{
+    SensitiveUrl,
+    types::{Address, ExecutionBlockHash, Hash256, MainnetEthSpec},
+};
 use std::sync::Arc;
 use tokio::runtime::Runtime;
-use types::{Address, ExecutionBlockHash, Hash256, MainnetEthSpec};
 
 /// Builds the Eth payload to be included in the block proposal.
 pub trait EthPayloadBuilder: Send + Sync {

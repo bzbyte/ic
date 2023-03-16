@@ -1038,6 +1038,7 @@ checksum = "8d696c370c750c948ada61c69a0ee2cbbb9c50b1019ddb86d9317157a99c2cae"
 [[package]]
 name = "bls"
 version = "0.2.0"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "arbitrary",
  "blst",
@@ -1330,9 +1331,9 @@ checksum = "c3ac9f8b63eca6fd385229b3675f6cc0dc5c8a5c8a54a59d4f52ffd670d87b0c"
 
 [[package]]
 name = "byte-unit"
-version = "4.0.18"
+version = "4.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3348673602e04848647fffaa8e9a861e7b5d5cae6570727b41bde0f722514484"
+checksum = "da78b32057b8fdfc352504708feeba7216dcd65a2c9ab02978cbd288d1279b6c"
 dependencies = [
  "serde",
  "utf8-width",
@@ -1405,6 +1406,7 @@ dependencies = [
 [[package]]
 name = "cached_tree_hash"
 version = "0.1.0"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "eth2_hashing",
  "eth2_ssz",
@@ -2005,10 +2007,12 @@ dependencies = [
 [[package]]
 name = "compare_fields"
 version = "0.2.0"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 
 [[package]]
 name = "compare_fields_derive"
 version = "0.2.0"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "quote 1.0.26",
  "syn 1.0.109",
@@ -2522,11 +2526,11 @@ dependencies = [
 
 [[package]]
 name = "cvt"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34ac344c7efccb80cd25bc61b2170aec26f2f693fd40e765a539a1243db48c71"
+checksum = "d2ae9bf77fbf2d39ef573205d554d87e86c12f1994e9ea335b0651b9b278bcf1"
 dependencies = [
- "cfg-if 0.1.10",
+ "cfg-if 1.0.0",
 ]
 
 [[package]]
@@ -3343,6 +3347,7 @@ dependencies = [
 [[package]]
 name = "eth2_hashing"
 version = "0.3.0"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "cpufeatures",
  "lazy_static",
@@ -3353,6 +3358,7 @@ dependencies = [
 [[package]]
 name = "eth2_interop_keypairs"
 version = "0.2.0"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "bls",
  "eth2_hashing",
@@ -3367,6 +3373,7 @@ dependencies = [
 [[package]]
 name = "eth2_serde_utils"
 version = "0.1.1"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "ethereum-types",
  "hex",
@@ -3378,6 +3385,7 @@ dependencies = [
 [[package]]
 name = "eth2_ssz"
 version = "0.4.1"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "ethereum-types",
  "itertools",
@@ -3387,6 +3395,7 @@ dependencies = [
 [[package]]
 name = "eth2_ssz_derive"
 version = "0.3.1"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "darling 0.13.4",
  "proc-macro2 1.0.52",
@@ -3397,6 +3406,7 @@ dependencies = [
 [[package]]
 name = "eth2_ssz_types"
 version = "0.2.2"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "arbitrary",
  "derivative",
@@ -3519,6 +3529,7 @@ dependencies = [
 [[package]]
 name = "execution_layer"
 version = "0.1.0"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "async-trait",
  "bytes",
@@ -5433,7 +5444,6 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rayon",
- "sensitive_url",
  "serde_cbor",
  "slog",
  "slog-async",
@@ -5443,7 +5453,6 @@ dependencies = [
  "strum_macros 0.23.1",
  "tempfile",
  "tokio",
- "types",
 ]
 
 [[package]]
@@ -10560,6 +10569,7 @@ dependencies = [
 [[package]]
 name = "int_to_bytes"
 version = "0.2.0"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "bytes",
 ]
@@ -10746,11 +10756,11 @@ dependencies = [
 
 [[package]]
 name = "jsonwebtoken"
-version = "8.2.0"
+version = "8.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09f4f04699947111ec1733e71778d763555737579e44b85844cae8e1940a1828"
+checksum = "6971da4d9c3aa03c3d8f3ff0f4155b534aad021292003895a469716b2a230378"
 dependencies = [
- "base64 0.13.1",
+ "base64 0.21.0",
  "pem 1.1.1",
  "ring",
  "serde",
@@ -11234,6 +11244,7 @@ dependencies = [
 [[package]]
 name = "lighthouse_metrics"
 version = "0.2.0"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "lazy_static",
  "prometheus 0.13.3",
@@ -11597,6 +11608,7 @@ checksum = "8452105ba047068f40ff7093dd1d9da90898e63dd61736462e9cdda6a90ad3c3"
 [[package]]
 name = "merkle_proof"
 version = "0.2.0"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "eth2_hashing",
  "ethereum-types",
@@ -12348,9 +12360,9 @@ dependencies = [
 
 [[package]]
 name = "openssl"
-version = "0.10.45"
+version = "0.10.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b102428fd03bc5edf97f62620f7298614c45cedf287c271e7ed450bbaf83f2e1"
+checksum = "fd2523381e46256e40930512c7fd25562b9eae4812cb52078f155e87217c9d1e"
 dependencies = [
  "bitflags",
  "cfg-if 1.0.0",
@@ -12389,9 +12401,9 @@ dependencies = [
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.80"
+version = "0.9.81"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23bbbf7854cd45b83958ebe919f0e8e516793727652e27fda10a8384cfc790b7"
+checksum = "176be2629957c157240f68f61f2d0053ad3a4ecfdd9ebf1e6521d18d9635cf67"
 dependencies = [
  "autocfg 1.1.0",
  "cc",
@@ -13066,15 +13078,15 @@ dependencies = [
 
 [[package]]
 name = "predicates-core"
-version = "1.0.5"
+version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72f883590242d3c6fc5bf50299011695fa6590c2c70eac95ee1bdb9a733ad1a2"
+checksum = "b794032607612e7abeb4db69adb4e33590fa6cf1149e95fd7cb00e634b92f174"
 
 [[package]]
 name = "predicates-tree"
-version = "1.0.7"
+version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54ff541861505aabf6ea722d2131ee980b8276e10a1297b94e896dd8b621850d"
+checksum = "368ba315fb8c5052ab692e68a0eefec6ec57b23a36959c14496f0b0df2c0cecf"
 dependencies = [
  "predicates-core",
  "termtree",
@@ -13150,9 +13162,9 @@ dependencies = [
 
 [[package]]
 name = "prettyplease"
-version = "0.1.24"
+version = "0.1.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ebcd279d20a4a0a2404a33056388e950504d891c855c7975b9a8fef75f3bf04"
+checksum = "6c8646e95016a7a6c4adea95bafa8a16baab64b583356217f2c85db4a39d9a86"
 dependencies = [
  "proc-macro2 1.0.52",
  "syn 1.0.109",
@@ -14354,6 +14366,7 @@ checksum = "f91339c0467de62360649f8d3e185ca8de4224ff281f66000de5eb2a77a79041"
 [[package]]
 name = "safe_arith"
 version = "0.1.0"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 
 [[package]]
 name = "safemem"
@@ -14522,6 +14535,7 @@ dependencies = [
 [[package]]
 name = "sensitive_url"
 version = "0.1.0"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "serde",
  "url",
@@ -14529,9 +14543,9 @@ dependencies = [
 
 [[package]]
 name = "serde"
-version = "1.0.155"
+version = "1.0.156"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71f2b4817415c6d4210bfe1c7bfcf4801b2d904cb4d0e1a8fdb651013c9e86b8"
+checksum = "314b5b092c0ade17c00142951e50ced110ec27cea304b1037c6969246c2469a4"
 dependencies = [
  "serde_derive",
 ]
@@ -14607,9 +14621,9 @@ dependencies = [
 
 [[package]]
 name = "serde_derive"
-version = "1.0.155"
+version = "1.0.156"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d071a94a3fac4aff69d023a7f411e33f40f3483f8c5190b1953822b6b76d7630"
+checksum = "d7e29c4601e36bcec74a223228dce795f4cd3616341a4af93520ca1a837c087d"
 dependencies = [
  "proc-macro2 1.0.52",
  "quote 1.0.26",
@@ -15617,6 +15631,7 @@ dependencies = [
 [[package]]
 name = "swap_or_not_shuffle"
 version = "0.2.0"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "eth2_hashing",
  "ethereum-types",
@@ -15771,6 +15786,7 @@ dependencies = [
 [[package]]
 name = "task_executor"
 version = "0.1.0"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "exit-future",
  "futures",
@@ -15845,9 +15861,9 @@ dependencies = [
 
 [[package]]
 name = "termtree"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95059e91184749cb66be6dc994f67f182b6d897cb3df74a5bf66b5e709295fd8"
+checksum = "3369f5ac52d5eb6ab48c6b4ffdc8efbcad6b89c765749064ba298f2c68a16a76"
 
 [[package]]
 name = "test-strategy"
@@ -15864,6 +15880,7 @@ dependencies = [
 [[package]]
 name = "test_random_derive"
 version = "0.2.0"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "quote 1.0.26",
  "syn 1.0.109",
@@ -16626,6 +16643,7 @@ dependencies = [
 [[package]]
 name = "tree_hash"
 version = "0.4.1"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "eth2_hashing",
  "ethereum-types",
@@ -16635,6 +16653,7 @@ dependencies = [
 [[package]]
 name = "tree_hash_derive"
 version = "0.4.0"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "darling 0.13.4",
  "quote 1.0.26",
@@ -16763,6 +16782,7 @@ checksum = "497961ef93d974e23eb6f433eb5fe1b7930b659f06d12dec6fc44a8f554c0bba"
 [[package]]
 name = "types"
 version = "0.2.1"
+source = "git+https://github.com/bzbyte/execution_layer?branch=rsub/demo-b#6485e810d13b4a2aee5c62f8f3a0ce32c9dbe864"
 dependencies = [
  "arbitrary",
  "bls",
