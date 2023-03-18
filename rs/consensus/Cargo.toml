@@ -27,7 +27,7 @@ ic-protobuf = { path = "../protobuf" }
 ic-types = { path = "../types/types" }
 ic-utils = { path = "../utils" }
 bincode = "1.2.1"
-execution_layer = { git = "https://github.com/bzbyte/execution_layer", branch = "rsub/demo-b" }
+execution_layer = "0.1.0"
 hex = "0.4.2"
 num-integer = "0.1.41"
 phantom_newtype = { path = "../phantom_newtype" }
