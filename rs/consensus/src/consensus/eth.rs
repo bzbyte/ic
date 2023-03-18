@@ -4,6 +4,7 @@ use ic_logger::{info, ReplicaLogger};
 use ic_types::eth::{EthExecutionDelivery, EthPayload};
 
 use execution_layer::engine_api::{
+    auth::{Auth, JwtKey},
     http::HttpJsonRpc, BlockByNumberQuery, GetJsonPayloadResponse, ForkchoiceState,
     PayloadAttributes, PayloadAttributesV1, LATEST_TAG,
 };
@@ -13,6 +14,8 @@ use execution_layer::{
 };
 use std::sync::Arc;
 use tokio::runtime::Runtime;
+
+pub const JWT_SECRET: [u8; 32] = [0u8; 32];
 
 /// Builds the Eth payload to be included in the block proposal.
 pub trait EthPayloadBuilder: Send + Sync {
@@ -33,9 +36,11 @@ pub struct EthStubImpl {
 
 impl EthStubImpl {
     pub fn new(url: &str, log: ReplicaLogger) -> Self {
+        let rpc_auth = Auth::new(JwtKey::from_slice(&JWT_SECRET).unwrap(), None, None);
         let rpc_url = SensitiveUrl::parse(url).unwrap();
+        let rpc_client = HttpJsonRpc::new_with_auth(rpc_url, rpc_auth, None).unwrap();
         Self {
-            rpc_client: HttpJsonRpc::new(rpc_url, None).unwrap(),
+            rpc_client,
             runtime: tokio::runtime::Runtime::new().unwrap(),
             log,
         }
