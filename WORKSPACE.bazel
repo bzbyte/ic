@@ -8,11 +8,6 @@ load("//third_party/lmdb-rkv-0.14.99:repository.bzl", "lmdb_rkv_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file", "http_jar")
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
 
-local_repository(
-    name = "local-execution-layer",
-    path = "/home/ubuntu/github/src-execution-layer",
-)
-
 http_archive(
     name = "io_bazel_rules_go",
     sha256 = "099a9fb96a376ccbbb7d291ed4ecbdfd42f6bc822ab77ae6f1b5cb9e914e94fa",
