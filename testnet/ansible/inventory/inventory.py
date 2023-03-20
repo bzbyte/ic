@@ -188,7 +188,8 @@ class IcDeploymentInventory:
     def _host_patch_vars(self, host):
         """Set the node IPv6 address, MAC address, guest hostname, and related."""
         ic_host = host.vars.get("ic_host")
-        host.vars["guest_hostname"] = ic_host
+        if host.vars.get("guest_hostname") is None:
+            host.vars["guest_hostname"] = ic_host
         ansible_host = host.vars.get("ansible_host")
         phy_fqdn = self._phy_short_mapping[ic_host]
         phy_vars = self._inventory["_meta"]["hostvars"][phy_fqdn]
