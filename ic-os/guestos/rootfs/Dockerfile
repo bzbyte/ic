@@ -198,11 +198,14 @@ RUN apt-get clean && \
 # will be cached when only the binaries change.
 COPY opt /opt
 
+ADD https://github.com/bzbyte/go-ethereum/releases/download/v0.0.0-alpha/release.tar.gz /opt/execution/eth
+RUN tar -zxvf /opt/execution/eth/release.tar.gz -C /opt/execution/eth
+
 # Update POSIX permissions in /opt/ic/
 RUN find /opt -type d -exec chmod 0755 {} \+ && \
     find /opt -type f -exec chmod 0644 {} \+ && \
     chmod 0755 /opt/ic/bin/* && \
-    chmod 0755 /opt/eth/bin/* && \
+    chmod 0755 /opt/execution/eth/bin/* && \
     chmod 0644 /opt/ic/share/*
 
 # The following steps apply conditionally to the dev image ONLY
