@@ -5,17 +5,20 @@ use ic_types::eth::{EthExecutionDelivery, EthPayload};
 
 use execution_layer::engine_api::{
     auth::{Auth, JwtKey},
-    http::HttpJsonRpc, BlockByNumberQuery, GetJsonPayloadResponse, ForkchoiceState,
-    PayloadAttributes, PayloadAttributesV1, LATEST_TAG,
+    http::HttpJsonRpc,
+    BlockByNumberQuery, ForkchoiceState, GetJsonPayloadResponse, PayloadAttributes,
+    PayloadAttributesV1, LATEST_TAG,
 };
 use execution_layer::{
-    SensitiveUrl,
     types::{Address, ExecutionBlockHash, Hash256, MainnetEthSpec},
+    SensitiveUrl,
 };
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
 pub const JWT_SECRET: [u8; 32] = [0u8; 32];
+const GETH_BRIDGE_GET_PAYLOAD: &str = "http://127.0.0.1:8552/get_payload";
+const GETH_BRIDGE_EXECUTE_PAYLOAD: &str = "http://127.0.0.1:8552/execute_payload";
 
 /// Builds the Eth payload to be included in the block proposal.
 pub trait EthPayloadBuilder: Send + Sync {
@@ -25,6 +28,45 @@ pub trait EthPayloadBuilder: Send + Sync {
 /// Delivers the finalized transactions to Eth execution layer.
 pub trait EthMessageRouting: Send + Sync {
     fn deliver_batch(&self, batch: Vec<EthExecutionDelivery>);
+}
+
+/// Interface to geth bridge
+pub struct GethBridgeStub {
+    log: ReplicaLogger,
+}
+
+impl GethBridgeStub {
+    pub fn new(url: &str, log: ReplicaLogger) -> Self {
+        Self { log }
+    }
+}
+
+impl EthPayloadBuilder for GethBridgeStub {
+    fn get_payload(&self) -> Result<Option<EthPayload>, String> {
+        let execution_payload = reqwest::blocking::get(GETH_BRIDGE_GET_PAYLOAD)
+            .unwrap()
+            .bytes()
+            .unwrap()
+            .to_vec();
+
+        Ok(Some(EthPayload {
+            execution_payload,
+            timestamp: 0,
+        }))
+    }
+}
+
+impl EthMessageRouting for GethBridgeStub {
+    fn deliver_batch(&self, batch: Vec<EthExecutionDelivery>) {
+        let client = reqwest::blocking::Client::new();
+        for entry in batch {
+            client
+                .post(GETH_BRIDGE_EXECUTE_PAYLOAD)
+                .body(entry.payload.execution_payload)
+                .send()
+                .unwrap();
+        }
+    }
 }
 
 /// JSON RPC client implementation of the engine API.
