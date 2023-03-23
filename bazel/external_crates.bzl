@@ -310,6 +310,10 @@ def external_crates_repository(name, static_openssl, cargo_lockfile, lockfile):
                 git = "https://github.com/dfinity-lab/derive_more",
                 rev = "9f1b894e6fde640da4e9ea71a8fc0e4dd98d01da",
             ),
+            "bzb_execution_layer": crate.spec(
+		git = "ssh://git@github.com:/bzbyte/execution_layer.git",
+		rev = "fe71af82e7d8e14bb7728f0954ca3a36e5f89aa8"
+            ),
             "digest": crate.spec(
                 version = "^0.9.0",
             ),

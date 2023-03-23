@@ -4,7 +4,6 @@ version = "0.8.0"
 edition = "2021"
 
 [dependencies]
-ic-crypto-tree-hash = { path = "../crypto/tree_hash" }
 ic-artifact-pool = { path = "../artifact_pool" }
 ic-config = { path = "../config" }
 ic-consensus-utils = { path = "./utils" }
