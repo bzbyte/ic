@@ -70,6 +70,7 @@ pub mod canister_http;
 pub mod chunkable;
 pub mod consensus;
 pub mod crypto;
+pub mod eth;
 pub mod filetree_sync;
 pub mod funds;
 pub mod ingress;
