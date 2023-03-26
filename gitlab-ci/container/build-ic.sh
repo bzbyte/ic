@@ -98,9 +98,9 @@ echo_green "Validating build environment"
 validate_build_env
 
 echo_blue "Purging artifact directories"
-rm -rf "$BINARIES_DIR_FULL"
-rm -rf "$CANISTERS_DIR_FULL"
-rm -rf "$DISK_DIR_FULL"
+#rm -rf "$BINARIES_DIR_FULL"
+#rm -rf "$CANISTERS_DIR_FULL"
+#rm -rf "$DISK_DIR_FULL"
 
 if $BUILD_STATIC_SSL 
 then
@@ -117,7 +117,7 @@ BUILD_BINARIES_CMD=$(
     # build binaries
     mkdir -p "$BINARIES_DIR"
     $SSL_OPT $BAZEL_CMD //publish/binaries
-    bazel cquery --output=files //publish/binaries | xargs -I {} cp {} "$BINARIES_DIR"
+    bazel cquery --output=files //publish/binaries | xargs -I {} cp -f {} "$BINARIES_DIR"
 END
 )
 
@@ -126,7 +126,7 @@ BUILD_CANISTERS_CMD=$(
     # build canisters
     mkdir -p "$CANISTERS_DIR"
     $BAZEL_CMD //publish/canisters
-    bazel cquery --output=files //publish/canisters | xargs -I {} cp {} "$CANISTERS_DIR"
+    bazel cquery --output=files //publish/canisters | xargs -I {} cp -f {} "$CANISTERS_DIR"
 END
 )
 
@@ -142,7 +142,7 @@ BUILD_IMAGES_CMD=$(
     # build ic-os images
     mkdir -p "$DISK_DIR"
     $BAZEL_CMD //ic-os/guestos/${IMG_TYPE}
-    bazel cquery --output=files //ic-os/guestos/${IMG_TYPE} | xargs -I {} cp {} "$DISK_DIR"
+    bazel cquery --output=files //ic-os/guestos/${IMG_TYPE} | xargs -I {} cp -f {} "$DISK_DIR"
 END
 )
 BUILD_CMD=""
