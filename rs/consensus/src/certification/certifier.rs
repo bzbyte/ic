@@ -1,6 +1,6 @@
 use super::verifier::VerifierImpl;
 use super::CertificationCrypto;
-use crate::consensus::{membership::Membership, utils};
+use crate::consensus::{eth::EthExecutionClient, membership::Membership, utils};
 use ic_interfaces::{
     artifact_manager::ArtifactPoolDescriptor,
     certification::{
@@ -13,7 +13,6 @@ use ic_interfaces_state_manager::StateManager;
 use ic_logger::{debug, error, trace, ReplicaLogger};
 use ic_metrics::{buckets::decimal_buckets, MetricsRegistry};
 use ic_replicated_state::ReplicatedState;
-use ic_types::consensus::{Committee, HasCommittee, HasHeight};
 use ic_types::{
     artifact::{
         CertificationMessageAttribute, CertificationMessageFilter, CertificationMessageId,
@@ -27,6 +26,9 @@ use ic_types::{
     replica_config::ReplicaConfig,
     CryptoHashOfPartialState, Height,
 };
+use ic_types::{
+    consensus::{Committee, HasCommittee, HasHeight}
+};
 use prometheus::{Histogram, IntCounter, IntGauge};
 use std::cell::RefCell;
 use std::sync::{Arc, RwLock};
@@ -39,6 +41,7 @@ pub struct CertifierImpl {
     membership: Arc<Membership>,
     crypto: Arc<dyn CertificationCrypto>,
     state_manager: Arc<dyn StateManager<State = ReplicatedState>>,
+    eth_state_manager: Arc<dyn StateManager<State = EthExecutionClient>>,
     metrics: CertifierMetrics,
     /// The highest height that has been purged. Used to avoid redudant purging.
     highest_purged_height: RefCell<Height>,
@@ -119,6 +122,7 @@ pub fn setup(
     membership: Arc<Membership>,
     crypto: Arc<dyn CertificationCrypto>,
     state_manager: Arc<dyn StateManager<State = ReplicatedState>>,
+    eth_state_manager: Arc<dyn StateManager<State = EthExecutionClient>>,
     consensus_pool_cache: Arc<dyn ConsensusPoolCache>,
     metrics_registry: MetricsRegistry,
     log: ReplicaLogger,
@@ -129,6 +133,7 @@ pub fn setup(
             membership,
             crypto,
             state_manager.clone(),
+            eth_state_manager,
             metrics_registry,
             log,
         ),
@@ -274,6 +279,7 @@ impl CertifierImpl {
         membership: Arc<Membership>,
         crypto: Arc<dyn CertificationCrypto>,
         state_manager: Arc<dyn StateManager<State = ReplicatedState>>,
+        eth_state_manager: Arc<dyn StateManager<State = EthExecutionClient>>,
         metrics_registry: MetricsRegistry,
         log: ReplicaLogger,
     ) -> Self {
@@ -282,6 +288,7 @@ impl CertifierImpl {
             membership,
             crypto,
             state_manager,
+            eth_state_manager,
             metrics: CertifierMetrics {
                 shares_created: metrics_registry.int_counter(
                     "certification_shares_created",

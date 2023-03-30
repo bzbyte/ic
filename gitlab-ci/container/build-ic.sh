@@ -104,7 +104,7 @@ echo_blue "Purging artifact directories"
 
 BAZEL_ENV=""
 #BAZEL_ENV+="CARGO_BAZEL_REPIN=true "
-if $BUILD_STATIC_SSL 
+if $BUILD_STATIC_SSL
 then
 BAZEL_ENV+="DFINITY_OPENSSL_STATIC=1 "
 fi
