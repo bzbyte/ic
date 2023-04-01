@@ -44,7 +44,7 @@ pub trait EthMessageRouting: Send + Sync {
     fn deliver_batch(&self, batch: Vec<EthExecutionDelivery>);
 }
 
-type CertificationMap = BTreeMap<Height, (CryptoHashOfPartialState, Option<Certification>)>;
+type CertificationMap = BTreeMap<Height, (Height, CryptoHashOfPartialState, Option<Certification>)>;
 
 #[derive(Clone, Copy)]
 struct EthExecutionState {
@@ -91,24 +91,39 @@ impl EthExecutionClient {
         }
     }
 
-    fn add_finalized_height(&self, height: Height, state_root: CryptoHashOfPartialState) {
+    fn add_finalized_height(
+        &self,
+        consensus_height: Height,
+        execution_height: Height,
+        state_root: CryptoHashOfPartialState,
+    ) {
         let mut certification_map = self.certification_pending.lock().unwrap();
-        let _ = certification_map
-            .entry(height)
-            .or_insert((state_root, None));
+        let _ = certification_map.entry(consensus_height).or_insert((
+            execution_height,
+            state_root,
+            None,
+        ));
     }
 
     fn add_certification(&self, certification: Certification) {
         let mut certification_map = self.certification_pending.lock().unwrap();
-        let height = certification.height;
+        let consensus_height = certification.height;
         // Accept the first certificate if the hash matches
-        if let Some((state_root, cert_entry)) = certification_map.get_mut(&height) {
+        if let Some((execution_height, state_root, cert_entry)) =
+            certification_map.get_mut(&consensus_height)
+        {
             if cert_entry.is_none() && *state_root == certification.signed.content.hash {
+                println!("Eth Certification {:?}", certification);
+                println!(
+                    "consensus height {}, Exec height {}",
+                    consensus_height, execution_height
+                );
                 cert_entry.replace(certification);
             }
         }
     }
 
+    #[allow(unused)]
     fn update_head(&self, head_block_hash: ExecutionBlockHash, timestamp: u64) {
         let mut state = self.state.lock().unwrap();
         state.fork_choice_state.head_block_hash = head_block_hash;
@@ -160,7 +175,7 @@ impl EthPayloadBuilder for EthExecutionClient {
 
             let timestamp = if let GetJsonPayloadResponse::V1(
                 JsonExecutionPayloadV1 {
-                    block_hash: head_block_hash,
+                    block_hash: _head_block_hash,
                     timestamp,
                     ..
                 },
@@ -188,7 +203,7 @@ impl EthMessageRouting for EthExecutionClient {
                 let json_payload: GetJsonPayloadResponse<MainnetEthSpec> =
                     bincode::deserialize(&entry.payload.execution_payload).unwrap();
 
-                let (state_root, block_number, finalized_block_hash, timestamp) =
+                let (state_root, eth_block_number, finalized_block_hash, timestamp) =
                     match &json_payload {
                         GetJsonPayloadResponse::V1(
                             JsonExecutionPayloadV1 {
@@ -218,7 +233,8 @@ impl EthMessageRouting for EthExecutionClient {
                 );
 
                 self.add_finalized_height(
-                    Height::from(block_number),
+                    Height::from(entry.height),
+                    Height::from(eth_block_number),
                     CryptoHashOfPartialState::from(CryptoHash(state_root)),
                 );
                 self.update_finalized_block(finalized_block_hash, timestamp);
@@ -271,9 +287,11 @@ impl StateManager for EthExecutionClient {
             .unwrap()
             .iter()
             .filter_map(
-                |(height, (state_root, certification))| match certification {
-                    Some(_) => None,
-                    None => Some((Height::from(*height), state_root.clone())),
+                |(consensus_height, (_execution_height, state_root, certification))| {
+                    match certification {
+                        Some(_) => None,
+                        None => Some((Height::from(*consensus_height), state_root.clone())),
+                    }
                 },
             )
             .collect();
