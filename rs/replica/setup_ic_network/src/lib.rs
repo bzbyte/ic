@@ -16,7 +16,7 @@ use ic_config::{
 };
 use ic_consensus::{
     canister_http, certification,
-    consensus::{pool_reader::PoolReader, ConsensusCrypto, Membership, eth::EthExecution},
+    consensus::{eth::EthExecution, pool_reader::PoolReader, ConsensusCrypto, Membership},
     dkg, ecdsa,
 };
 use ic_crypto_tls_interfaces::TlsHandshake;
@@ -117,7 +117,7 @@ pub fn create_networking_stack(
     canister_http_adapter_client:
         ic_interfaces_https_outcalls_adapter_client::CanisterHttpAdapterClient,
     registry_poll_delay_duration_ms: u64,
-    eth_execution: EthExecution
+    eth_execution: EthExecution,
 ) -> (IngressIngestionService, P2PThreadJoiner) {
     let advert_subscriber = AdvertBroadcaster::new(log.clone(), &metrics_registry);
 
@@ -147,7 +147,7 @@ pub fn create_networking_stack(
         registry_poll_delay_duration_ms,
         advert_subscriber.clone(),
         canister_http_adapter_client,
-        eth_execution
+        eth_execution,
     )
     .unwrap();
 
@@ -220,7 +220,7 @@ fn setup_artifact_manager(
     registry_poll_delay_duration_ms: u64,
     advert_broadcaster: AdvertBroadcaster,
     canister_http_adapter_client: ic_interfaces_https_outcalls_adapter_client::CanisterHttpAdapterClient,
-    eth_execution: EthExecution
+    eth_execution: EthExecution,
 ) -> std::io::Result<Arc<dyn ArtifactManager>> {
     // Initialize the time source.
     let time_source = Arc::new(SysTimeSource::new());
@@ -303,7 +303,11 @@ fn setup_artifact_manager(
         ),
     ));
 
-    let EthExecution{ eth_payload_builder, eth_message_routing, eth_state_manager }: EthExecution = eth_execution;
+    let EthExecution {
+        eth_payload_builder,
+        eth_message_routing,
+        eth_state_manager,
+    }: EthExecution = eth_execution;
     {
         // Create the consensus client.
         let advert_broadcaster = advert_broadcaster.clone();

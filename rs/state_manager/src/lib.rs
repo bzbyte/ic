@@ -2608,19 +2608,22 @@ impl StateManager for StateManagerImpl {
         {
             let hash = metadata.certified_state_hash.clone();
             if certification.signed.content.hash.get_ref() != &hash {
-                if let Err(err) = self
-                    .state_layout
-                    .create_diverged_state_marker(certification_height)
-                {
-                    error!(
-                        self.log,
-                        "Failed to mark state @{} diverged: {}", certification_height, err
-                    );
-                }
-                panic!(
+                // if let Err(err) = self
+                //     .state_layout
+                //     .create_diverged_state_marker(certification_height)
+                // {
+                //     error!(
+                //         self.log,
+                //         "Failed to mark state @{} diverged: {}", certification_height, err
+                //     );
+                // }
+                info!(
+                    self.log,
                     "delivered certification has invalid hash, expected {:?}, received {:?}",
-                    hash, certification.signed.content.hash
+                    hash,
+                    certification.signed.content.hash
                 );
+                return;
             }
             let latest_certified =
                 update_latest_height(&self.latest_certified_height, certification.height);

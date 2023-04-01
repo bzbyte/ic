@@ -13,6 +13,7 @@ use ic_interfaces_state_manager::StateManager;
 use ic_logger::{debug, error, trace, ReplicaLogger};
 use ic_metrics::{buckets::decimal_buckets, MetricsRegistry};
 use ic_replicated_state::ReplicatedState;
+use ic_types::consensus::{Committee, HasCommittee, HasHeight};
 use ic_types::{
     artifact::{
         CertificationMessageAttribute, CertificationMessageFilter, CertificationMessageId,
@@ -25,9 +26,6 @@ use ic_types::{
     crypto::Signed,
     replica_config::ReplicaConfig,
     CryptoHashOfPartialState, Height,
-};
-use ic_types::{
-    consensus::{Committee, HasCommittee, HasHeight}
 };
 use prometheus::{Histogram, IntCounter, IntGauge};
 use std::cell::RefCell;
@@ -159,16 +157,20 @@ impl Certifier for CertifierImpl {
         // state manager, if they're available or return those hashes which do not have
         // certifications and for which we did not issue a share yet.
         let certification_pool = &*certification_pool.read().unwrap();
-        let state_hashes_to_certify: Vec<_> = self
-            .state_manager
-            .list_state_hashes_to_certify()
+
+        let eth_state_hashes = self.eth_state_manager.list_state_hashes_to_certify();
+        let state_hashes = self.state_manager.list_state_hashes_to_certify();
+        let state_hashes_to_certify: Vec<_> = state_hashes
             .into_iter()
+            .chain(eth_state_hashes)
             .filter_map(
                 |(height, hash)| match certification_pool.certification_at_height(height) {
                     // if we have a valid certification, deliver it to the state manager and skip
                     // the pair
                     Some(certification) => {
                         self.state_manager
+                            .deliver_state_certification(certification.clone());
+                        self.eth_state_manager
                             .deliver_state_certification(certification);
                         self.metrics.last_certified_height.set(height.get() as i64);
                         debug!(&self.log, "Delivered certification for height {}", height);

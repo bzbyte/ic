@@ -272,7 +272,7 @@ pub fn construct_ic_stack(
         local_store_time_reader,
         canister_http_adapter_client,
         config.nns_registry_replicator.poll_delay_duration_ms,
-        eth_execution
+        eth_execution,
     );
     Ok((
         crypto,
