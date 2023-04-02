@@ -158,35 +158,48 @@ impl Certifier for CertifierImpl {
         // certifications and for which we did not issue a share yet.
         let certification_pool = &*certification_pool.read().unwrap();
 
-        let eth_state_hashes = self.eth_state_manager.list_state_hashes_to_certify();
-        let state_hashes = self.state_manager.list_state_hashes_to_certify();
-        let state_hashes_to_certify: Vec<_> = state_hashes
-            .into_iter()
-            .chain(eth_state_hashes)
-            .filter_map(
-                |(height, hash)| match certification_pool.certification_at_height(height) {
-                    // if we have a valid certification, deliver it to the state manager and skip
-                    // the pair
-                    Some(certification) => {
-                        self.state_manager
-                            .deliver_state_certification(certification.clone());
-                        self.eth_state_manager
-                            .deliver_state_certification(certification);
+        let filter_certified_requests = |state_hashes: Vec<(Height, CryptoHashOfPartialState)>,
+                                         cert_delivery_fn: &dyn Fn(Certification) -> bool|
+         -> Vec<_> {
+            state_hashes
+                .into_iter()
+                .filter_map(|(height, hash)| {
+                    let mut certifications = certification_pool.certification_at_height(height);
+                    if certifications.all(|c| cert_delivery_fn(c) == false) {
+                        Some((height, hash))
+                    } else {
                         self.metrics.last_certified_height.set(height.get() as i64);
                         debug!(&self.log, "Delivered certification for height {}", height);
                         None
                     }
-                    // return this pair to be signed by the current replica
-                    _ => Some((height, hash)),
-                },
-            )
-            .collect();
+                })
+                .collect()
+        };
+
+        // collect and filter out certification requests that have already been served
+        let state_hashes = self.state_manager.list_state_hashes_to_certify();
+        let mut state_hashes_to_certify =
+            filter_certified_requests(state_hashes, &|certification| {
+                self.state_manager
+                    .deliver_state_certification(certification)
+                    .is_ok()
+            });
+        let eth_state_hashes = self.eth_state_manager.list_state_hashes_to_certify();
+        let mut eth_state_hashes_to_certify =
+            filter_certified_requests(eth_state_hashes, &|certification| {
+                self.eth_state_manager
+                    .deliver_state_certification(certification)
+                    .is_ok()
+            });
+
         trace!(
             &self.log,
-            "Received {} hash(es) to be certified in {:?}",
-            state_hashes_to_certify.len(),
+            "Received hash(es) to be certified in {:?} Eth {:?} {:?}",
+            &state_hashes_to_certify,
+            &eth_state_hashes_to_certify,
             start.elapsed()
         );
+        state_hashes_to_certify.append(&mut eth_state_hashes_to_certify);
 
         // Next we try to execute 4 steps: signing, purging, aggregating and validating
         // sequentially and stop whenever any of these steps produces a non empty
@@ -344,10 +357,25 @@ impl CertifierImpl {
             })
             // Filter out all heights if we have a share signed by us already (this is a linear scan
             // through all shares of the same height, but is bound by the number of replicas).
-            .filter(|(height, _)| {
-                certification_pool
+            .filter(|(height, hash)| {
+                // select by returning true for
+                // 1. If we have never signed
+                // 2. Or we have signed but for a different hash
+
+                if certification_pool
                     .shares_at_height(*height)
                     .all(|share| share.signed.signature.signer != self.replica_config.node_id)
+                {
+                    true // we have never signed
+                } else {
+                    // we have signed but all our signature are were for a different hash
+                    certification_pool
+                        .shares_at_height(*height)
+                        .filter(|share| {
+                            share.signed.signature.signer == self.replica_config.node_id
+                        })
+                        .all(|share| share.signed.content.hash != *hash)
+                }
             })
             .filter_map(|(height, hash)| {
                 let content = CertificationContent::new(hash);

@@ -11,8 +11,8 @@ use bzb_execution_layer::engine_api::{
     PayloadAttributesV1, LATEST_TAG,
 };
 use ic_crypto_tree_hash::{LabeledTree, MixedHashTree};
-use ic_interfaces_state_manager::{StateManager, StateReader};
-use ic_logger::{debug, ReplicaLogger};
+use ic_interfaces_state_manager::{CertDeliveryError, StateManager, StateReader};
+use ic_logger::{debug, info, ReplicaLogger};
 use ic_types::{
     consensus::certification::Certification,
     crypto::CryptoHash,
@@ -105,22 +105,28 @@ impl EthExecutionClient {
         ));
     }
 
-    fn add_certification(&self, certification: Certification) {
+    fn add_certification(&self, certification: Certification) -> Result<(), CertDeliveryError> {
         let mut certification_map = self.certification_pending.lock().unwrap();
         let consensus_height = certification.height;
         // Accept the first certificate if the hash matches
         if let Some((execution_height, state_root, cert_entry)) =
             certification_map.get_mut(&consensus_height)
         {
-            if cert_entry.is_none() && *state_root == certification.signed.content.hash {
-                println!("Eth Certification {:?}", certification);
-                println!(
-                    "consensus height {}, Exec height {}",
-                    consensus_height, execution_height
+            if *state_root != certification.signed.content.hash {
+                return Err(CertDeliveryError::HashNotRequested(consensus_height));
+            }
+            if cert_entry.is_none() {
+                debug!(
+                    self.log,
+                    "Eth Certification {:?} consensus height {}, Exec height {}",
+                    certification,
+                    consensus_height,
+                    execution_height
                 );
                 cert_entry.replace(certification);
             }
         }
+        Ok(())
     }
 
     #[allow(unused)]
@@ -299,8 +305,11 @@ impl StateManager for EthExecutionClient {
         m
     }
 
-    fn deliver_state_certification(&self, certification: Certification) {
-        self.add_certification(certification);
+    fn deliver_state_certification(
+        &self,
+        certification: Certification,
+    ) -> Result<(), CertDeliveryError> {
+        self.add_certification(certification)
     }
 
     fn get_state_hash_at(

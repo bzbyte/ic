@@ -27,9 +27,9 @@ use ic_interfaces_certified_stream_store::{
     CertifiedStreamStore, DecodeStreamError, EncodeStreamError,
 };
 use ic_interfaces_state_manager::{
-    CertificationMask, CertificationScope, Labeled, PermanentStateHashError::*, StateHashError,
-    StateManager, StateManagerError, StateManagerResult, StateReader, TransientStateHashError::*,
-    CERT_CERTIFIED, CERT_UNCERTIFIED,
+    CertDeliveryError, CertificationMask, CertificationScope, Labeled, PermanentStateHashError::*,
+    StateHashError, StateManager, StateManagerError, StateManagerResult, StateReader,
+    TransientStateHashError::*, CERT_CERTIFIED, CERT_UNCERTIFIED,
 };
 use ic_logger::{debug, error, fatal, info, warn, ReplicaLogger};
 use ic_metrics::{buckets::decimal_buckets, MetricsRegistry};
@@ -2594,7 +2594,10 @@ impl StateManager for StateManagerImpl {
             .collect()
     }
 
-    fn deliver_state_certification(&self, certification: Certification) {
+    fn deliver_state_certification(
+        &self,
+        certification: Certification,
+    ) -> Result<(), CertDeliveryError> {
         let _timer = self
             .metrics
             .api_call_duration
@@ -2623,7 +2626,7 @@ impl StateManager for StateManagerImpl {
                     hash,
                     certification.signed.content.hash
                 );
-                return;
+                return Err(CertDeliveryError::HashNotRequested(certification.height));
             }
             let latest_certified =
                 update_latest_height(&self.latest_certified_height, certification.height);
@@ -2645,6 +2648,7 @@ impl StateManager for StateManagerImpl {
                 }
             }
         }
+        Ok(())
     }
 
     /// # Panics

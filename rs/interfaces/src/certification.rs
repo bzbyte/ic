@@ -70,7 +70,10 @@ pub enum ChangeAction {
 /// Trait containing only immutable functions wrt. Certification Pool
 pub trait CertificationPool {
     /// Returns the certification for the given height, if available.
-    fn certification_at_height(&self, height: Height) -> Option<Certification>;
+    fn certification_at_height(
+        &self,
+        height: Height,
+    ) -> Box<dyn Iterator<Item = Certification> + '_>;
 
     /// Returns an iterator over all shares for the given height.
     fn shares_at_height(&self, height: Height)

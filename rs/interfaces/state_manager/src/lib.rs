@@ -65,6 +65,12 @@ pub enum StateHashError {
     Transient(#[from] TransientStateHashError),
 }
 
+#[derive(Error, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum CertDeliveryError {
+    #[error("hash of state at height {0} was not requested by state manager")]
+    HashNotRequested(Height),
+}
+
 /// Indicates the subset of the state that needs to be certified.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CertificationScope {
@@ -181,7 +187,10 @@ pub trait StateManager: StateReader {
     ///
     /// Panics if certification.content.hash is not equal to the hash computed
     /// from the state at height certification.content.height.
-    fn deliver_state_certification(&self, certification: Certification);
+    fn deliver_state_certification(
+        &self,
+        certification: Certification,
+    ) -> Result<(), CertDeliveryError>;
 
     /// Returns the hash of the state at the specified `height`.
     ///
