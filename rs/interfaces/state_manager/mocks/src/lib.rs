@@ -10,7 +10,7 @@ use ic_types::{
 use mockall::*;
 use std::sync::Arc;
 
-mock! {
+-> Result<(), CertDeliveryError> mock! {
     pub StateManager {}
 
     impl StateReader for StateManager {
