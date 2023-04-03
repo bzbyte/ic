@@ -1,7 +1,7 @@
 use ic_crypto_tree_hash::{LabeledTree, MixedHashTree};
 use ic_interfaces_state_manager::{
-    CertificationMask, CertificationScope, Labeled, StateHashError, StateManager,
-    StateManagerResult, StateReader,
+    CertDeliveryError, CertificationMask, CertificationScope, Labeled, StateHashError,
+    StateManager, StateManagerResult, StateReader,
 };
 use ic_replicated_state::ReplicatedState;
 use ic_types::{
@@ -10,7 +10,7 @@ use ic_types::{
 use mockall::*;
 use std::sync::Arc;
 
--> Result<(), CertDeliveryError> mock! {
+mock! {
     pub StateManager {}
 
     impl StateReader for StateManager {
@@ -41,7 +41,7 @@ use std::sync::Arc;
 
         fn list_state_hashes_to_certify(&self) -> Vec<(Height, CryptoHashOfPartialState)>;
 
-        fn deliver_state_certification(&self, certification: Certification);
+        fn deliver_state_certification(&self, certification: Certification) -> Result<(), CertDeliveryError>;
 
         fn list_state_heights(
             &self,
