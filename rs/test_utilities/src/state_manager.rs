@@ -5,9 +5,9 @@ use ic_interfaces_certified_stream_store::{
     CertifiedStreamStore, DecodeStreamError, EncodeStreamError,
 };
 use ic_interfaces_state_manager::{
-    CertificationMask, CertificationScope, Labeled, PermanentStateHashError::*, StateHashError,
-    StateManager, StateManagerError, StateManagerResult, StateReader, TransientStateHashError::*,
-    CERT_ANY, CERT_CERTIFIED, CERT_UNCERTIFIED,
+    CertDeliveryError, CertificationMask, CertificationScope, Labeled, PermanentStateHashError::*,
+    StateHashError, StateManager, StateManagerError, StateManagerResult, StateReader,
+    TransientStateHashError::*, CERT_ANY, CERT_CERTIFIED, CERT_UNCERTIFIED,
 };
 use ic_interfaces_state_manager_mocks::MockStateManager;
 use ic_registry_subnet_type::SubnetType;
@@ -181,7 +181,10 @@ impl StateManager for FakeStateManager {
             .collect()
     }
 
-    fn deliver_state_certification(&self, certification: Certification) {
+    fn deliver_state_certification(
+        &self,
+        certification: Certification,
+    ) -> Result<(), CertDeliveryError> {
         let mut snapshots = self.states.write().unwrap();
         if let Some(snapshot) = snapshots
             .iter_mut()
@@ -189,6 +192,7 @@ impl StateManager for FakeStateManager {
         {
             snapshot.certification = Some(certification);
         }
+        Ok(())
     }
 
     fn list_state_heights(&self, cert_mask: CertificationMask) -> Vec<Height> {
