@@ -543,7 +543,10 @@ impl StateManager for RefMockStateManager {
         self.mock.read().unwrap().list_state_hashes_to_certify()
     }
 
-    fn deliver_state_certification(&self, certification: Certification) {
+    fn deliver_state_certification(
+        &self,
+        certification: Certification,
+    ) -> Result<(), CertDeliveryError> {
         self.mock
             .read()
             .unwrap()

@@ -525,6 +525,7 @@ impl CertifierImpl {
 
         // check if the certification contains the same state hash as our local one. If
         // not, we consider the certification invalid.
+        /*
         if hash != &certification.signed.content.hash {
             return Some(ChangeAction::HandleInvalid(
                 msg,
@@ -533,7 +534,7 @@ impl CertifierImpl {
                     hash, certification.signed.content.hash
                 ),
             ));
-        }
+        }*/
 
         // Verify the certification signature.
         match verifier.validate(
@@ -566,6 +567,7 @@ impl CertifierImpl {
         let content = &share.signed.content;
         // If the share has an invalid content or does not belong to the
         // committee
+        /*
         if !hash.eq(&content.hash) {
             return Some(ChangeAction::HandleInvalid(
                 msg,
@@ -574,7 +576,7 @@ impl CertifierImpl {
                     hash, content.hash
                 ),
             ));
-        }
+        }*/
         let signer = share.signed.signature.signer;
         match self.membership.node_belongs_to_threshold_committee(
             signer,
