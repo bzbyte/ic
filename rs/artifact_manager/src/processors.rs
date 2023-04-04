@@ -126,7 +126,6 @@ impl<Artifact: ArtifactKind + 'static> ArtifactProcessorManager<Artifact> {
                     client,
                     Box::new(send_advert),
                     receiver,
-                    ArtifactProcessorMetrics::new(metrics_registry, Artifact::TAG.to_string()),
                     shutdown_cl,
                 );
             })
@@ -152,7 +151,6 @@ impl<Artifact: ArtifactKind + 'static> ArtifactProcessorManager<Artifact> {
         client: Box<dyn ArtifactProcessor<Artifact>>,
         send_advert: Box<S>,
         receiver: Receiver<UnvalidatedArtifact<Artifact::Message>>,
-        mut metrics: ArtifactProcessorMetrics,
         shutdown: Arc<AtomicBool>,
     ) {
         let mut last_on_state_change_result = ProcessingResult::StateUnchanged;
@@ -178,8 +176,8 @@ impl<Artifact: ArtifactKind + 'static> ArtifactProcessorManager<Artifact> {
                 Err(RecvTimeoutError::Disconnected) => return,
             };
             time_source.update_time().ok();
-            let (adverts, on_state_change_result) = metrics
-                .with_metrics(|| client.process_changes(time_source.as_ref(), batched_artifacts));
+            let (adverts, on_state_change_result) =
+                client.process_changes(time_source.as_ref(), batched_artifacts);
             adverts.into_iter().for_each(&send_advert);
             last_on_state_change_result = on_state_change_result;
         }
@@ -451,7 +449,7 @@ pub struct CertificationProcessor<PoolCertification> {
     /// The certifier.
     client: Box<dyn Certifier>,
     /// The invalidated artifacts counter.
-    invalidated_artifacts: IntCounter,
+    //invalidated_artifacts: IntCounter,
     /// The logger.
     log: ReplicaLogger,
 }
@@ -480,10 +478,10 @@ impl<PoolCertification: MutableCertificationPool + Send + Sync + 'static>
             consensus_pool_cache: consensus_pool_cache.clone(),
             certification_pool: certification_pool.clone(),
             client: Box::new(certifier),
-            invalidated_artifacts: metrics_registry.int_counter(
-                "certification_invalidated_artifacts",
-                "The number of invalidated certification artifacts",
-            ),
+            // invalidated_artifacts: metrics_registry.int_counter(
+            //     "certification_invalidated_artifacts",
+            //     "The number of invalidated certification artifacts",
+            // ),
             log,
         };
         let manager = ArtifactProcessorManager::new(
@@ -543,7 +541,125 @@ impl<PoolCertification: MutableCertificationPool + Send + Sync + 'static>
                     ))
                 }
                 certification::ChangeAction::HandleInvalid(msg, reason) => {
-                    self.invalidated_artifacts.inc();
+                    //self.invalidated_artifacts.inc();
+                    warn!(
+                        self.log,
+                        "Invalid certification message ({:?}): {:?}", reason, msg
+                    );
+                }
+                _ => {}
+            }
+        }
+        self.certification_pool
+            .write()
+            .unwrap()
+            .apply_changes(change_set);
+        (adverts, changed)
+    }
+}
+
+/// Execution Certification `OnStateChange` client.
+pub struct ExecCertificationProcessor<PoolCertification> {
+    /// The *Consensus* pool cache.
+    consensus_pool_cache: Arc<dyn ConsensusPoolCache>,
+    /// The certification pool.
+    certification_pool: Arc<RwLock<PoolCertification>>,
+    /// The certifier.
+    client: Box<dyn Certifier>,
+    /// The invalidated artifacts counter.
+    //invalidated_artifacts: IntCounter,
+    /// The logger.
+    log: ReplicaLogger,
+}
+
+impl<PoolCertification: MutableCertificationPool + Send + Sync + 'static>
+    ExecCertificationProcessor<PoolCertification>
+{
+    #[allow(clippy::too_many_arguments)]
+    pub fn build<
+        C: Certifier + 'static,
+        G: ArtifactPoolDescriptor<ExecCertificationArtifact, PoolCertification> + 'static,
+        S: Fn(AdvertSendRequest<ExecCertificationArtifact>) + Send + 'static,
+    >(
+        send_advert: S,
+        (certifier, certifier_gossip): (C, G),
+        time_source: Arc<SysTimeSource>,
+        consensus_pool_cache: Arc<dyn ConsensusPoolCache>,
+        certification_pool: Arc<RwLock<PoolCertification>>,
+        log: ReplicaLogger,
+        metrics_registry: MetricsRegistry,
+    ) -> (
+        clients::ExecCertificationClient<PoolCertification, G>,
+        ArtifactProcessorManager<ExecCertificationArtifact>,
+    ) {
+        let client = Self {
+            consensus_pool_cache: consensus_pool_cache.clone(),
+            certification_pool: certification_pool.clone(),
+            client: Box::new(certifier),
+            // invalidated_artifacts: metrics_registry.int_counter(
+            //     "certification_invalidated_artifacts",
+            //     "The number of invalidated certification artifacts",
+            // ),
+            log,
+        };
+        let manager = ArtifactProcessorManager::new(
+            time_source,
+            metrics_registry,
+            Box::new(client),
+            send_advert,
+        );
+        (
+            clients::ExecCertificationClient::new(certification_pool, certifier_gossip),
+            manager,
+        )
+    }
+}
+
+impl<PoolCertification: MutableCertificationPool + Send + Sync + 'static>
+    ArtifactProcessor<ExecCertificationArtifact> for ExecCertificationProcessor<PoolCertification>
+{
+    /// The method processes changes in the certification pool.
+    fn process_changes(
+        &self,
+        _time_source: &dyn TimeSource,
+        artifacts: Vec<UnvalidatedArtifact<CertificationMessage>>,
+    ) -> (
+        Vec<AdvertSendRequest<ExecCertificationArtifact>>,
+        ProcessingResult,
+    ) {
+        {
+            let mut certification_pool = self.certification_pool.write().unwrap();
+            for artifact in artifacts {
+                certification_pool.insert(artifact.message)
+            }
+        }
+        let mut adverts = Vec::new();
+        let change_set = self.client.on_state_change(
+            self.consensus_pool_cache.as_ref(),
+            self.certification_pool.clone(),
+        );
+        let changed = if !change_set.is_empty() {
+            ProcessingResult::StateChanged
+        } else {
+            ProcessingResult::StateUnchanged
+        };
+
+        for action in change_set.iter() {
+            match action {
+                certification::ChangeAction::AddToValidated(msg) => {
+                    adverts.push(ExecCertificationArtifact::message_to_advert_send_request(
+                        msg,
+                        ArtifactDestination::AllPeersInSubnet,
+                    ))
+                }
+                certification::ChangeAction::MoveToValidated(msg) => {
+                    adverts.push(ExecCertificationArtifact::message_to_advert_send_request(
+                        msg,
+                        ArtifactDestination::AllPeersInSubnet,
+                    ))
+                }
+                certification::ChangeAction::HandleInvalid(msg, reason) => {
+                    //self.invalidated_artifacts.inc();
                     warn!(
                         self.log,
                         "Invalid certification message ({:?}): {:?}", reason, msg

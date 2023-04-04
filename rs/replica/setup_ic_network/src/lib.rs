@@ -9,7 +9,8 @@ use ic_artifact_manager::{manager, processors};
 use ic_artifact_pool::{
     canister_http_pool::CanisterHttpPoolImpl, certification_pool::CertificationPoolImpl,
     consensus_pool::ConsensusPoolImpl, dkg_pool::DkgPoolImpl, ecdsa_pool::EcdsaPoolImpl,
-    ensure_persistent_pool_replica_version_compatibility, ingress_pool::IngressPoolImpl,
+    ensure_persistent_pool_replica_version_compatibility,
+    exec_certification_pool::ExecCertificationPoolImpl, ingress_pool::IngressPoolImpl,
 };
 use ic_config::{
     artifact_pool::ArtifactPoolConfig, consensus::ConsensusConfig, transport::TransportConfig,
@@ -73,6 +74,7 @@ pub struct ArtifactPools {
     pub consensus_pool: Arc<RwLock<ConsensusPoolImpl>>,
     pub consensus_pool_cache: Arc<dyn ConsensusPoolCache>,
     pub certification_pool: Arc<RwLock<CertificationPoolImpl>>,
+    pub exec_certification_pool: Arc<RwLock<ExecCertificationPoolImpl>>,
     pub dkg_pool: Arc<RwLock<DkgPoolImpl>>,
     pub ecdsa_pool: Arc<RwLock<EcdsaPoolImpl>>,
     pub canister_http_pool: Arc<RwLock<CanisterHttpPoolImpl>>,
@@ -362,16 +364,43 @@ fn setup_artifact_manager(
     }
 
     {
+        // Create the certification client 2
+        let advert_broadcaster = advert_broadcaster.clone();
+        let (certification_client, actor) = processors::ExecCertificationProcessor::build(
+            move |req| advert_broadcaster.send(req.advert.into(), req.dest),
+            certification::setup(
+                ic_consensus::certification::CertifierType::EXECUTION,
+                consensus_replica_config.clone(),
+                Arc::clone(&membership) as Arc<_>,
+                Arc::clone(&certifier_crypto),
+                eth_state_manager.clone() as Arc<_>,
+                eth_state_manager as Arc<_>,
+                Arc::clone(&artifact_pools.consensus_pool_cache) as Arc<_>,
+                metrics_registry.clone(),
+                replica_logger.clone(),
+            ),
+            Arc::clone(&time_source) as Arc<_>,
+            Arc::clone(&artifact_pools.consensus_pool_cache) as Arc<_>,
+            Arc::clone(&artifact_pools.exec_certification_pool),
+            replica_logger.clone(),
+            metrics_registry.clone(),
+        );
+
+        artifact_manager_maker.add_client(Box::new(certification_client), actor);
+    }
+
+    {
         // Create the certification client.
         let advert_broadcaster = advert_broadcaster.clone();
         let (certification_client, actor) = processors::CertificationProcessor::build(
             move |req| advert_broadcaster.send(req.advert.into(), req.dest),
             certification::setup(
+                ic_consensus::certification::CertifierType::CONSENSUS,
                 consensus_replica_config.clone(),
                 Arc::clone(&membership) as Arc<_>,
                 Arc::clone(&certifier_crypto),
                 Arc::clone(&state_manager) as Arc<_>,
-                eth_state_manager as Arc<_>,
+                Arc::clone(&state_manager) as Arc<_>,
                 Arc::clone(&artifact_pools.consensus_pool_cache) as Arc<_>,
                 metrics_registry.clone(),
                 replica_logger.clone(),
@@ -517,6 +546,11 @@ pub fn init_artifact_pools(
     )));
     let consensus_pool_cache = consensus_pool.read().unwrap().get_cache();
     let certification_pool = Arc::new(RwLock::new(CertificationPoolImpl::new(
+        config.clone(),
+        log.clone(),
+        registry.clone(),
+    )));
+    let exec_certification_pool = Arc::new(RwLock::new(ExecCertificationPoolImpl::new(
         config,
         log,
         registry.clone(),
@@ -524,6 +558,7 @@ pub fn init_artifact_pools(
     let dkg_pool = Arc::new(RwLock::new(DkgPoolImpl::new(registry.clone())));
     let canister_http_pool = Arc::new(RwLock::new(CanisterHttpPoolImpl::new(registry)));
     ArtifactPools {
+        exec_certification_pool,
         ingress_pool,
         consensus_pool,
         consensus_pool_cache,

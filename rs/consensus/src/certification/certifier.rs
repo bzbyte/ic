@@ -1,5 +1,6 @@
 use super::verifier::VerifierImpl;
 use super::CertificationCrypto;
+use crate::certification::CertifierType;
 use crate::consensus::{eth::EthExecutionClient, membership::Membership, utils};
 use ic_interfaces::{
     artifact_manager::ArtifactPoolDescriptor,
@@ -13,6 +14,7 @@ use ic_interfaces_state_manager::StateManager;
 use ic_logger::{debug, error, trace, ReplicaLogger};
 use ic_metrics::{buckets::decimal_buckets, MetricsRegistry};
 use ic_replicated_state::ReplicatedState;
+use ic_types::artifact_kind::ExecCertificationArtifact;
 use ic_types::consensus::{Committee, HasCommittee, HasHeight};
 use ic_types::{
     artifact::{
@@ -34,13 +36,14 @@ use std::time::Instant;
 
 /// The Certification component, processing the changes on the certification
 /// pool and submitting the corresponding change sets.
-pub struct CertifierImpl {
+pub struct CertifierImpl<T> {
+    certifier_type: CertifierType,
     replica_config: ReplicaConfig,
     membership: Arc<Membership>,
     crypto: Arc<dyn CertificationCrypto>,
-    state_manager: Arc<dyn StateManager<State = ReplicatedState>>,
-    eth_state_manager: Arc<dyn StateManager<State = EthExecutionClient>>,
-    metrics: CertifierMetrics,
+    state_manager: Arc<dyn StateManager<State = T>>,
+    eth_state_manager: Arc<dyn StateManager<State = T>>,
+    /// metrics: CertifierMetrics,
     /// The highest height that has been purged. Used to avoid redudant purging.
     highest_purged_height: RefCell<Height>,
     log: ReplicaLogger,
@@ -48,8 +51,8 @@ pub struct CertifierImpl {
 
 /// The Certification component, processing the changes on the certification
 /// pool and submitting the corresponding change sets.
-pub struct CertifierGossipImpl {
-    state_manager: Arc<dyn StateManager<State = ReplicatedState>>,
+pub struct CertifierGossipImpl<T> {
+    state_manager: Arc<dyn StateManager<State = T>>,
     consensus_pool_cache: Arc<dyn ConsensusPoolCache>,
 }
 
@@ -60,8 +63,62 @@ struct CertifierMetrics {
     execution_time: Histogram,
 }
 
-impl<Pool: CertificationPool> ArtifactPoolDescriptor<CertificationArtifact, Pool>
-    for CertifierGossipImpl
+impl<Pool: CertificationPool, T> ArtifactPoolDescriptor<CertificationArtifact, Pool>
+    for CertifierGossipImpl<T>
+{
+    // The priority function requires just the height of the artifact to decide if
+    // it should be fetched or not: if we already have a full certification at
+    // that height or this height is below the CUP height, we're not interested in
+    // any new artifacts at that height. If it is above the CUP height and we do not
+    // have a full certification at that height, we're interested in all artifacts.
+    fn get_priority_function(
+        &self,
+        certification_pool: &Pool,
+    ) -> PriorityFn<CertificationMessageId, CertificationMessageAttribute> {
+        let certified_heights = certification_pool.certified_heights();
+        let cup_height = self.consensus_pool_cache.catch_up_package().height();
+        Box::new(move |_, attribute| {
+            let height = match attribute {
+                CertificationMessageAttribute::Certification(height) => height,
+                CertificationMessageAttribute::CertificationShare(height) => height,
+            };
+            // We drop all artifacts below the CUP height or those for which we have a full
+            // certification already.
+            if *height < cup_height || certified_heights.contains(height) {
+                Priority::Drop
+            } else {
+                Priority::Fetch
+            }
+        })
+    }
+
+    /// Return the height above which we want a certification. Note that
+    /// this is not always equal the upper bound of what we have in the
+    /// certification pool for the following reasons:
+    /// 1. The pool is not persisted. We will not have any certification
+    ///    in there.
+    /// 2. We might have certification in the pool that is not yet
+    ///    verified or delivered to the state_manager.
+    fn get_filter(&self) -> CertificationMessageFilter {
+        let to_certify = self.state_manager.list_state_hashes_to_certify();
+        let filter_height = if to_certify.is_empty() {
+            self.state_manager.latest_state_height()
+        } else {
+            let h = to_certify[0].0;
+            assert!(
+                h > Height::from(0),
+                "State height to certify must be 1 or above"
+            );
+            h.decrement()
+        };
+        CertificationMessageFilter {
+            height: filter_height,
+        }
+    }
+}
+
+impl<Pool: CertificationPool, T> ArtifactPoolDescriptor<ExecCertificationArtifact, Pool>
+    for CertifierGossipImpl<T>
 {
     // The priority function requires just the height of the artifact to decide if
     // it should be fetched or not: if we already have a full certification at
@@ -115,18 +172,20 @@ impl<Pool: CertificationPool> ArtifactPoolDescriptor<CertificationArtifact, Pool
 }
 
 /// Return both Certifier and CertifierGossip components.
-pub fn setup(
+pub fn setup<T>(
+    certifier_type: CertifierType,
     replica_config: ReplicaConfig,
     membership: Arc<Membership>,
     crypto: Arc<dyn CertificationCrypto>,
-    state_manager: Arc<dyn StateManager<State = ReplicatedState>>,
-    eth_state_manager: Arc<dyn StateManager<State = EthExecutionClient>>,
+    state_manager: Arc<dyn StateManager<State = T>>,
+    eth_state_manager: Arc<dyn StateManager<State = T>>,
     consensus_pool_cache: Arc<dyn ConsensusPoolCache>,
     metrics_registry: MetricsRegistry,
     log: ReplicaLogger,
-) -> (CertifierImpl, CertifierGossipImpl) {
+) -> (CertifierImpl<T>, CertifierGossipImpl<T>) {
     (
         CertifierImpl::new(
+            certifier_type,
             replica_config,
             membership,
             crypto,
@@ -142,7 +201,7 @@ pub fn setup(
     )
 }
 
-impl Certifier for CertifierImpl {
+impl<T> Certifier for CertifierImpl<T> {
     fn on_state_change(
         &self,
         consensus_cache: &dyn ConsensusPoolCache,
@@ -150,7 +209,7 @@ impl Certifier for CertifierImpl {
     ) -> ChangeSet {
         // This timer will make an entry in the metrics histogram automatically, when
         // it's dropped.
-        let _timer = self.metrics.execution_time.start_timer();
+        //let _timer = self.metrics.execution_time.start_timer();
         let start = Instant::now();
 
         // First, we iterate over requested heights and deliver certifications to the
@@ -168,7 +227,7 @@ impl Certifier for CertifierImpl {
                     if certifications.all(|c| cert_delivery_fn(c) == false) {
                         Some((height, hash))
                     } else {
-                        self.metrics.last_certified_height.set(height.get() as i64);
+                        //self.metrics.last_certified_height.set(height.get() as i64);
                         debug!(&self.log, "Delivered certification for height {}", height);
                         None
                     }
@@ -176,30 +235,33 @@ impl Certifier for CertifierImpl {
                 .collect()
         };
 
-        // collect and filter out certification requests that have already been served
-        let state_hashes = self.state_manager.list_state_hashes_to_certify();
-        let mut state_hashes_to_certify =
-            filter_certified_requests(state_hashes, &|certification| {
-                self.state_manager
-                    .deliver_state_certification(certification)
-                    .is_ok()
-            });
-        let eth_state_hashes = self.eth_state_manager.list_state_hashes_to_certify();
-        let mut eth_state_hashes_to_certify =
-            filter_certified_requests(eth_state_hashes, &|certification| {
-                self.eth_state_manager
-                    .deliver_state_certification(certification)
-                    .is_ok()
-            });
+        let state_hashes_to_certify = match self.certifier_type {
+            CertifierType::CONSENSUS => {
+                let state_hashes = self.state_manager.list_state_hashes_to_certify();
 
-        trace!(
-            &self.log,
-            "Received hash(es) to be certified in {:?} Eth {:?} {:?}",
+                filter_certified_requests(state_hashes, &|certification| {
+                    self.state_manager
+                        .deliver_state_certification(certification)
+                        .is_ok()
+                })
+            }
+            CertifierType::EXECUTION => {
+                let eth_state_hashes = self.eth_state_manager.list_state_hashes_to_certify();
+
+                filter_certified_requests(eth_state_hashes, &|certification| {
+                    self.eth_state_manager
+                        .deliver_state_certification(certification)
+                        .is_ok()
+                })
+            }
+        };
+
+        println!(
+            "Received hash(es) to be certified in {:?} {:?} {:?}",
             &state_hashes_to_certify,
-            &eth_state_hashes_to_certify,
+            self.certifier_type,
             start.elapsed()
         );
-        state_hashes_to_certify.append(&mut eth_state_hashes_to_certify);
 
         // Next we try to execute 4 steps: signing, purging, aggregating and validating
         // sequentially and stop whenever any of these steps produces a non empty
@@ -215,7 +277,7 @@ impl Certifier for CertifierImpl {
             &state_hashes_to_certify,
         );
         if !shares.is_empty() {
-            self.metrics.shares_created.inc_by(shares.len() as u64);
+            //self.metrics.shares_created.inc_by(shares.len() as u64);
             trace!(
                 &self.log,
                 "Created {} certification shares in {:?}",
@@ -247,9 +309,9 @@ impl Certifier for CertifierImpl {
             .collect::<Vec<_>>();
 
         if !certifications.is_empty() {
-            self.metrics
-                .certifications_aggregated
-                .inc_by(certifications.len() as u64);
+            //self.metrics
+            //    .certifications_aggregated
+            //    .inc_by(certifications.len() as u64);
             trace!(
                 &self.log,
                 "Aggregated {} threshold-signatures in {:?}",
@@ -287,23 +349,26 @@ impl Certifier for CertifierImpl {
     }
 }
 
-impl CertifierImpl {
+impl<T> CertifierImpl<T> {
     /// Construct a new CertifierImpl.
     pub fn new(
+        certifier_type: CertifierType,
         replica_config: ReplicaConfig,
         membership: Arc<Membership>,
         crypto: Arc<dyn CertificationCrypto>,
-        state_manager: Arc<dyn StateManager<State = ReplicatedState>>,
-        eth_state_manager: Arc<dyn StateManager<State = EthExecutionClient>>,
+        state_manager: Arc<dyn StateManager<State = T>>,
+        eth_state_manager: Arc<dyn StateManager<State = T>>,
         metrics_registry: MetricsRegistry,
         log: ReplicaLogger,
     ) -> Self {
         Self {
+            certifier_type,
             replica_config,
             membership,
             crypto,
             state_manager,
             eth_state_manager,
+            /*
             metrics: CertifierMetrics {
                 shares_created: metrics_registry.int_counter(
                     "certification_shares_created",
@@ -322,7 +387,7 @@ impl CertifierImpl {
                     "certification_last_certified_height",
                     "The last certified height.",
                 ),
-            },
+            },*/
             log,
             highest_purged_height: RefCell::new(Height::from(1)),
         }
@@ -739,6 +804,7 @@ mod tests {
                     metrics_registry.clone(),
                 );
                 let (certifier, certifier_gossip) = setup(
+                    CertificationType::CONSENSUS,
                     replica_config,
                     membership,
                     crypto,

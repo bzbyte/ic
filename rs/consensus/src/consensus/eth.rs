@@ -116,13 +116,18 @@ impl EthExecutionClient {
                 return Err(CertDeliveryError::HashNotRequested(consensus_height));
             }
             if cert_entry.is_none() {
-                debug!(
+                info!(
                     self.log,
                     "Eth Certification {:?} consensus height {}, Exec height {}",
                     certification,
                     consensus_height,
                     execution_height
                 );
+                println!(
+                    "Eth Certification {:?} consensus height {}, Exec height {}",
+                    certification, consensus_height, execution_height
+                );
+
                 cert_entry.replace(certification);
             }
         }
@@ -302,6 +307,7 @@ impl StateManager for EthExecutionClient {
             )
             .collect();
         debug!(self.log, "Eth hash request {m:?}");
+        println!("Eth hash request {m:?}");
         m
     }
 

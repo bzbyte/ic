@@ -109,6 +109,8 @@ pub enum ArtifactTag {
     IngressArtifact,
     #[strum(serialize = "state_sync")]
     StateSyncArtifact,
+    #[strum(serialize = "exec_certification")]
+    ExecCertificationArtifact,
 }
 
 impl std::fmt::Display for ArtifactTag {
@@ -125,6 +127,7 @@ impl std::fmt::Display for ArtifactTag {
                 ArtifactTag::FileTreeSyncArtifact => "FileTreeSync",
                 ArtifactTag::IngressArtifact => "Ingress",
                 ArtifactTag::StateSyncArtifact => "StateSync",
+                ArtifactTag::ExecCertificationArtifact => "ExecCertificationArtifact",
             }
         )
     }
