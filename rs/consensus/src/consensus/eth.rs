@@ -271,11 +271,21 @@ impl StateReader for EthExecutionClient {
     }
 
     fn latest_state_height(&self) -> ic_types::Height {
-        todo!()
+        self.certification_pending
+            .lock()
+            .unwrap()
+            .last_key_value()
+            .map_or(Height::from(0), |(height, _)| *height)
     }
 
     fn latest_certified_height(&self) -> ic_types::Height {
-        todo!()
+        self.certification_pending
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|(_hc, (_he, _hash, certification))| certification.is_some())
+            .map_or(Height::from(0), |(hc, (_, _, _))| *hc)
     }
 
     fn read_certified_state(
