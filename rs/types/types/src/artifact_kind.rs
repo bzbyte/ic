@@ -117,7 +117,6 @@ impl ArtifactKind for ExecCertificationArtifact {
     /// The function converts a `CertificationMessage` into an advert for a
     /// `CertificationArtifact`.
     fn message_to_advert(msg: &ExecCertificationMessage) -> Advert<ExecCertificationArtifact> {
-        use CertificationMessage::*;
         let (attribute, id) = match &msg.0 {
             CertificationMessage::Certification(cert) => (
                 ExecCertificationMessageAttribute(CertificationMessageAttribute::Certification(

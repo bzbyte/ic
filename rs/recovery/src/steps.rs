@@ -161,7 +161,7 @@ impl Step for MergeCertificationPoolsStep {
         );
         pools.iter().for_each(|(ip, p)| {
             p.persistent_pool.certifications().get_all().for_each(|c| {
-                if let Some(cert) = new_pool.certification_at_height(c.height).next() {
+                if let Some(cert) = new_pool.certification_at_height(c.height) {
                     if cert != c {
                         warn!(
                             self.logger,

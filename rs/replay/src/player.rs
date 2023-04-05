@@ -515,7 +515,6 @@ impl Player {
             }
             let certification = certification_pool
                 .certification_at_height(h)
-                .next()
                 .unwrap_or_else(|| panic!("Missing certification at height {:?}", h));
             validator
                 .verify_certification(&certification)

@@ -126,6 +126,7 @@ impl<Artifact: ArtifactKind + 'static> ArtifactProcessorManager<Artifact> {
                     client,
                     Box::new(send_advert),
                     receiver,
+                    ArtifactProcessorMetrics::new(metrics_registry, Artifact::TAG.to_string()),
                     shutdown_cl,
                 );
             })
@@ -151,6 +152,7 @@ impl<Artifact: ArtifactKind + 'static> ArtifactProcessorManager<Artifact> {
         client: Box<dyn ArtifactProcessor<Artifact>>,
         send_advert: Box<S>,
         receiver: Receiver<UnvalidatedArtifact<Artifact::Message>>,
+        mut metrics: ArtifactProcessorMetrics,
         shutdown: Arc<AtomicBool>,
     ) {
         let mut last_on_state_change_result = ProcessingResult::StateUnchanged;
@@ -176,8 +178,8 @@ impl<Artifact: ArtifactKind + 'static> ArtifactProcessorManager<Artifact> {
                 Err(RecvTimeoutError::Disconnected) => return,
             };
             time_source.update_time().ok();
-            let (adverts, on_state_change_result) =
-                client.process_changes(time_source.as_ref(), batched_artifacts);
+            let (adverts, on_state_change_result) = metrics
+                .with_metrics(|| client.process_changes(time_source.as_ref(), batched_artifacts));
             adverts.into_iter().for_each(&send_advert);
             last_on_state_change_result = on_state_change_result;
         }
@@ -449,7 +451,7 @@ pub struct CertificationProcessor<PoolCertification> {
     /// The certifier.
     client: Box<dyn Certifier>,
     /// The invalidated artifacts counter.
-    //invalidated_artifacts: IntCounter,
+    invalidated_artifacts: IntCounter,
     /// The logger.
     log: ReplicaLogger,
 }
@@ -478,10 +480,10 @@ impl<PoolCertification: MutableCertificationPool + Send + Sync + 'static>
             consensus_pool_cache: consensus_pool_cache.clone(),
             certification_pool: certification_pool.clone(),
             client: Box::new(certifier),
-            // invalidated_artifacts: metrics_registry.int_counter(
-            //     "certification_invalidated_artifacts",
-            //     "The number of invalidated certification artifacts",
-            // ),
+            invalidated_artifacts: metrics_registry.int_counter(
+                "certification_invalidated_artifacts",
+                "The number of invalidated certification artifacts",
+            ),
             log,
         };
         let manager = ArtifactProcessorManager::new(
@@ -541,7 +543,7 @@ impl<PoolCertification: MutableCertificationPool + Send + Sync + 'static>
                     ))
                 }
                 certification::ChangeAction::HandleInvalid(msg, reason) => {
-                    //self.invalidated_artifacts.inc();
+                    self.invalidated_artifacts.inc();
                     warn!(
                         self.log,
                         "Invalid certification message ({:?}): {:?}", reason, msg
@@ -567,7 +569,7 @@ pub struct ExecCertificationProcessor<PoolCertification> {
     /// The certifier.
     client: Box<dyn Certifier>,
     /// The invalidated artifacts counter.
-    //invalidated_artifacts: IntCounter,
+    invalidated_artifacts: IntCounter,
     /// The logger.
     log: ReplicaLogger,
 }
@@ -596,10 +598,10 @@ impl<PoolCertification: MutableCertificationPool + Send + Sync + 'static>
             consensus_pool_cache: consensus_pool_cache.clone(),
             certification_pool: certification_pool.clone(),
             client: Box::new(certifier),
-            // invalidated_artifacts: metrics_registry.int_counter(
-            //     "certification_invalidated_artifacts",
-            //     "The number of invalidated certification artifacts",
-            // ),
+            invalidated_artifacts: metrics_registry.int_counter(
+                "exec_certification_invalidated_artifacts",
+                "The number of invalidated execution certification artifacts",
+            ),
             log,
         };
         let manager = ArtifactProcessorManager::new(
@@ -659,16 +661,15 @@ impl<PoolCertification: MutableCertificationPool + Send + Sync + 'static>
                     ))
                 }
                 certification::ChangeAction::HandleInvalid(msg, reason) => {
-                    //self.invalidated_artifacts.inc();
+                    self.invalidated_artifacts.inc();
                     warn!(
                         self.log,
-                        "Invalid certification message ({:?}): {:?}", reason, msg
+                        "Invalid Exec certification message ({:?}): {:?}", reason, msg
                     );
                 }
                 _ => {}
             }
         }
-        println!("Exec adverts created {:?}", adverts);
         self.certification_pool
             .write()
             .unwrap()

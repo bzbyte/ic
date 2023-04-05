@@ -27,9 +27,9 @@ use ic_interfaces_certified_stream_store::{
     CertifiedStreamStore, DecodeStreamError, EncodeStreamError,
 };
 use ic_interfaces_state_manager::{
-    CertDeliveryError, CertificationMask, CertificationScope, Labeled, PermanentStateHashError::*,
-    StateHashError, StateManager, StateManagerError, StateManagerResult, StateReader,
-    TransientStateHashError::*, CERT_CERTIFIED, CERT_UNCERTIFIED,
+    CertificationMask, CertificationScope, Labeled, PermanentStateHashError::*, StateHashError,
+    StateManager, StateManagerError, StateManagerResult, StateReader, TransientStateHashError::*,
+    CERT_CERTIFIED, CERT_UNCERTIFIED,
 };
 use ic_logger::{debug, error, fatal, info, warn, ReplicaLogger};
 use ic_metrics::{buckets::decimal_buckets, MetricsRegistry};
@@ -2594,10 +2594,7 @@ impl StateManager for StateManagerImpl {
             .collect()
     }
 
-    fn deliver_state_certification(
-        &self,
-        certification: Certification,
-    ) -> Result<(), CertDeliveryError> {
+    fn deliver_state_certification(&self, certification: Certification) {
         let _timer = self
             .metrics
             .api_call_duration
@@ -2611,22 +2608,19 @@ impl StateManager for StateManagerImpl {
         {
             let hash = metadata.certified_state_hash.clone();
             if certification.signed.content.hash.get_ref() != &hash {
-                // if let Err(err) = self
-                //     .state_layout
-                //     .create_diverged_state_marker(certification_height)
-                // {
-                //     error!(
-                //         self.log,
-                //         "Failed to mark state @{} diverged: {}", certification_height, err
-                //     );
-                // }
-                info!(
-                    self.log,
+                if let Err(err) = self
+                    .state_layout
+                    .create_diverged_state_marker(certification_height)
+                {
+                    error!(
+                        self.log,
+                        "Failed to mark state @{} diverged: {}", certification_height, err
+                    );
+                }
+                panic!(
                     "delivered certification has invalid hash, expected {:?}, received {:?}",
-                    hash,
-                    certification.signed.content.hash
+                    hash, certification.signed.content.hash
                 );
-                return Err(CertDeliveryError::HashNotRequested(certification.height));
             }
             let latest_certified =
                 update_latest_height(&self.latest_certified_height, certification.height);
@@ -2648,7 +2642,6 @@ impl StateManager for StateManagerImpl {
                 }
             }
         }
-        Ok(())
     }
 
     /// # Panics

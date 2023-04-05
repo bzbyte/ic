@@ -195,8 +195,11 @@ pub trait MutablePoolSection {
 }
 
 impl CertificationPool for CertificationPoolImpl {
-    fn certification_at_height(&self, height: Height) -> Box<dyn Iterator<Item = Certification>> {
-        self.persistent_pool.certifications().get_by_height(height)
+    fn certification_at_height(&self, height: Height) -> Option<Certification> {
+        self.persistent_pool
+            .certifications()
+            .get_by_height(height)
+            .next()
     }
 
     fn shares_at_height(
@@ -287,16 +290,15 @@ impl GossipPool<CertificationArtifact> for CertificationPoolImpl {
                 .shares_at_height(id.height)
                 .find(|share| &crypto_hash(share) == hash)
                 .map(CertificationMessage::CertificationShare),
-            CertificationMessageHash::Certification(hash) => self
-                .certification_at_height(id.height)
-                .next()
-                .and_then(|cert| {
+            CertificationMessageHash::Certification(hash) => {
+                self.certification_at_height(id.height).and_then(|cert| {
                     if &crypto_hash(&cert) == hash {
                         Some(CertificationMessage::Certification(cert))
                     } else {
                         None
                     }
-                }),
+                })
+            }
         }
     }
 

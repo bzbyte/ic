@@ -217,9 +217,9 @@ pub type ArtifactPriorityFn =
 /// instead of all of them individually.
 pub trait ArtifactKind: Sized {
     const TAG: ArtifactTag;
-    type Id: core::fmt::Debug;
-    type Message: core::fmt::Debug;
-    type Attribute: core::fmt::Debug;
+    type Id;
+    type Message;
+    type Attribute;
     type Filter: Default;
 
     /// Returns the advert of the given message.
@@ -343,7 +343,6 @@ impl ArtifactDestination {
 }
 
 /// Wrapper to generate the advert send requests
-#[derive(Debug)]
 pub struct AdvertSendRequest<Artifact: ArtifactKind> {
     pub advert: Advert<Artifact>,
     pub dest: ArtifactDestination,

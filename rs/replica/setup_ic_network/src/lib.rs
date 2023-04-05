@@ -373,7 +373,6 @@ fn setup_artifact_manager(
                 consensus_replica_config.clone(),
                 Arc::clone(&membership) as Arc<_>,
                 Arc::clone(&certifier_crypto),
-                eth_state_manager.clone() as Arc<_>,
                 eth_state_manager as Arc<_>,
                 Arc::clone(&artifact_pools.consensus_pool_cache) as Arc<_>,
                 metrics_registry.clone(),
@@ -385,7 +384,6 @@ fn setup_artifact_manager(
             replica_logger.clone(),
             metrics_registry.clone(),
         );
-
         artifact_manager_maker.add_client(Box::new(certification_client), actor);
     }
 
@@ -399,7 +397,6 @@ fn setup_artifact_manager(
                 consensus_replica_config.clone(),
                 Arc::clone(&membership) as Arc<_>,
                 Arc::clone(&certifier_crypto),
-                Arc::clone(&state_manager) as Arc<_>,
                 Arc::clone(&state_manager) as Arc<_>,
                 Arc::clone(&artifact_pools.consensus_pool_cache) as Arc<_>,
                 metrics_registry.clone(),

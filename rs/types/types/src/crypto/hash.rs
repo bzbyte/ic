@@ -58,10 +58,6 @@ pub(crate) const DOMAIN_CERTIFICATION_CONTENT: &str = "ic-state-root";
 const DOMAIN_CERTIFICATION: &str = "certification_domain";
 const DOMAIN_CERTIFICATION_SHARE: &str = "certification_share_domain";
 
-pub(crate) const DOMAIN_EXEC_CERTIFICATION_CONTENT: &str = "exec-state-root";
-const DOMAIN_EXEC_CERTIFICATION: &str = "exec_certification_domain";
-const DOMAIN_EXEC_CERTIFICATION_SHARE: &str = "exec_certification_share_domain";
-
 pub(crate) const DOMAIN_DEALING_CONTENT: &str = "dealing_content_non_interactive";
 
 const DOMAIN_DKG_MESSAGE: &str = "dkg_message_non_interactive";

@@ -1,7 +1,7 @@
 use super::verifier::VerifierImpl;
 use super::CertificationCrypto;
 use crate::certification::CertifierType;
-use crate::consensus::{eth::EthExecutionClient, membership::Membership, utils};
+use crate::consensus::{membership::Membership, utils};
 use ic_interfaces::{
     artifact_manager::ArtifactPoolDescriptor,
     certification::{
@@ -13,17 +13,13 @@ use ic_interfaces::{
 use ic_interfaces_state_manager::StateManager;
 use ic_logger::{debug, error, trace, ReplicaLogger};
 use ic_metrics::{buckets::decimal_buckets, MetricsRegistry};
-use ic_replicated_state::ReplicatedState;
-use ic_types::artifact::ExecCertificationMessageAttribute;
-use ic_types::artifact::ExecCertificationMessageId;
-use ic_types::artifact_kind::ExecCertificationArtifact;
 use ic_types::consensus::{Committee, HasCommittee, HasHeight};
 use ic_types::{
     artifact::{
         CertificationMessageAttribute, CertificationMessageFilter, CertificationMessageId,
-        Priority, PriorityFn,
+        ExecCertificationMessageAttribute, ExecCertificationMessageId, Priority, PriorityFn,
     },
-    artifact_kind::CertificationArtifact,
+    artifact_kind::{CertificationArtifact, ExecCertificationArtifact},
     consensus::certification::{
         Certification, CertificationContent, CertificationMessage, CertificationShare,
     },
@@ -39,13 +35,12 @@ use std::time::Instant;
 /// The Certification component, processing the changes on the certification
 /// pool and submitting the corresponding change sets.
 pub struct CertifierImpl<T> {
-    certifier_type: CertifierType,
+    _certifier_type: CertifierType,
     replica_config: ReplicaConfig,
     membership: Arc<Membership>,
     crypto: Arc<dyn CertificationCrypto>,
     state_manager: Arc<dyn StateManager<State = T>>,
-    eth_state_manager: Arc<dyn StateManager<State = T>>,
-    /// metrics: CertifierMetrics,
+    metrics: CertifierMetrics,
     /// The highest height that has been purged. Used to avoid redudant purging.
     highest_purged_height: RefCell<Height>,
     log: ReplicaLogger,
@@ -184,7 +179,6 @@ pub fn setup<T>(
     membership: Arc<Membership>,
     crypto: Arc<dyn CertificationCrypto>,
     state_manager: Arc<dyn StateManager<State = T>>,
-    eth_state_manager: Arc<dyn StateManager<State = T>>,
     consensus_pool_cache: Arc<dyn ConsensusPoolCache>,
     metrics_registry: MetricsRegistry,
     log: ReplicaLogger,
@@ -196,7 +190,6 @@ pub fn setup<T>(
             membership,
             crypto,
             state_manager.clone(),
-            eth_state_manager,
             metrics_registry,
             log,
         ),
@@ -215,57 +208,37 @@ impl<T> Certifier for CertifierImpl<T> {
     ) -> ChangeSet {
         // This timer will make an entry in the metrics histogram automatically, when
         // it's dropped.
-        //let _timer = self.metrics.execution_time.start_timer();
+        let _timer = self.metrics.execution_time.start_timer();
         let start = Instant::now();
 
         // First, we iterate over requested heights and deliver certifications to the
         // state manager, if they're available or return those hashes which do not have
         // certifications and for which we did not issue a share yet.
         let certification_pool = &*certification_pool.read().unwrap();
-
-        let filter_certified_requests = |state_hashes: Vec<(Height, CryptoHashOfPartialState)>,
-                                         cert_delivery_fn: &dyn Fn(Certification) -> bool|
-         -> Vec<_> {
-            state_hashes
-                .into_iter()
-                .filter_map(|(height, hash)| {
-                    let mut certifications = certification_pool.certification_at_height(height);
-                    if certifications.all(|c| cert_delivery_fn(c) == false) {
-                        Some((height, hash))
-                    } else {
-                        //self.metrics.last_certified_height.set(height.get() as i64);
+        let state_hashes_to_certify: Vec<_> = self
+            .state_manager
+            .list_state_hashes_to_certify()
+            .into_iter()
+            .filter_map(
+                |(height, hash)| match certification_pool.certification_at_height(height) {
+                    // if we have a valid certification, deliver it to the state manager and skip
+                    // the pair
+                    Some(certification) => {
+                        self.state_manager
+                            .deliver_state_certification(certification);
+                        self.metrics.last_certified_height.set(height.get() as i64);
                         debug!(&self.log, "Delivered certification for height {}", height);
                         None
                     }
-                })
-                .collect()
-        };
-
-        let state_hashes_to_certify = match self.certifier_type {
-            CertifierType::CONSENSUS => {
-                let state_hashes = self.state_manager.list_state_hashes_to_certify();
-
-                filter_certified_requests(state_hashes, &|certification| {
-                    self.state_manager
-                        .deliver_state_certification(certification)
-                        .is_ok()
-                })
-            }
-            CertifierType::EXECUTION => {
-                let eth_state_hashes = self.eth_state_manager.list_state_hashes_to_certify();
-
-                filter_certified_requests(eth_state_hashes, &|certification| {
-                    self.eth_state_manager
-                        .deliver_state_certification(certification)
-                        .is_ok()
-                })
-            }
-        };
-
-        println!(
-            "Received hash(es) to be certified in {:?} {:?} {:?}",
-            &state_hashes_to_certify.len(),
-            self.certifier_type,
+                    // return this pair to be signed by the current replica
+                    _ => Some((height, hash)),
+                },
+            )
+            .collect();
+        trace!(
+            &self.log,
+            "Received {} hash(es) to be certified in {:?}",
+            state_hashes_to_certify.len(),
             start.elapsed()
         );
 
@@ -283,7 +256,7 @@ impl<T> Certifier for CertifierImpl<T> {
             &state_hashes_to_certify,
         );
         if !shares.is_empty() {
-            //self.metrics.shares_created.inc_by(shares.len() as u64);
+            self.metrics.shares_created.inc_by(shares.len() as u64);
             trace!(
                 &self.log,
                 "Created {} certification shares in {:?}",
@@ -315,9 +288,9 @@ impl<T> Certifier for CertifierImpl<T> {
             .collect::<Vec<_>>();
 
         if !certifications.is_empty() {
-            //self.metrics
-            //    .certifications_aggregated
-            //    .inc_by(certifications.len() as u64);
+            self.metrics
+                .certifications_aggregated
+                .inc_by(certifications.len() as u64);
             trace!(
                 &self.log,
                 "Aggregated {} threshold-signatures in {:?}",
@@ -363,37 +336,42 @@ impl<T> CertifierImpl<T> {
         membership: Arc<Membership>,
         crypto: Arc<dyn CertificationCrypto>,
         state_manager: Arc<dyn StateManager<State = T>>,
-        eth_state_manager: Arc<dyn StateManager<State = T>>,
         metrics_registry: MetricsRegistry,
         log: ReplicaLogger,
     ) -> Self {
+        let metric_name_prefix = match certifier_type {
+            CertifierType::CONSENSUS => "",
+            CertifierType::EXECUTION => "execution_",
+        };
         Self {
-            certifier_type,
+            _certifier_type: certifier_type,
             replica_config,
             membership,
             crypto,
             state_manager,
-            eth_state_manager,
-            /*
             metrics: CertifierMetrics {
                 shares_created: metrics_registry.int_counter(
-                    "certification_shares_created",
-                    "Amount of certification shares created.",
+                    format!("{}certification_shares_created", metric_name_prefix).to_string(),
+                    "Amount of certification shares created.".to_string(),
                 ),
                 certifications_aggregated: metrics_registry.int_counter(
-                    "certification_certifications_aggregated",
-                    "Amount of full certifications created.",
+                    format!(
+                        "{}certification_certifications_aggregated",
+                        metric_name_prefix
+                    ),
+                    "Amount of full certifications created.".to_string(),
                 ),
                 execution_time: metrics_registry.histogram(
-                    "certification_execution_time",
-                    "Certifier execution time in seconds.",
+                    format!("{}certification_execution_time", metric_name_prefix).to_string(),
+                    "Certifier execution time in seconds.".to_string(),
                     decimal_buckets(-3, 1),
                 ),
                 last_certified_height: metrics_registry.int_gauge(
-                    "certification_last_certified_height",
-                    "The last certified height.",
+                    format!("{}certification_last_certified_height", metric_name_prefix)
+                        .to_string(),
+                    "The last certified height.".to_string(),
                 ),
-            },*/
+            },
             log,
             highest_purged_height: RefCell::new(Height::from(1)),
         }
@@ -428,25 +406,10 @@ impl<T> CertifierImpl<T> {
             })
             // Filter out all heights if we have a share signed by us already (this is a linear scan
             // through all shares of the same height, but is bound by the number of replicas).
-            .filter(|(height, hash)| {
-                // select by returning true for
-                // 1. If we have never signed
-                // 2. Or we have signed but for a different hash
-
-                if certification_pool
+            .filter(|(height, _)| {
+                certification_pool
                     .shares_at_height(*height)
                     .all(|share| share.signed.signature.signer != self.replica_config.node_id)
-                {
-                    true // we have never signed
-                } else {
-                    // we have signed but all our signature are were for a different hash
-                    certification_pool
-                        .shares_at_height(*height)
-                        .filter(|share| {
-                            share.signed.signature.signer == self.replica_config.node_id
-                        })
-                        .all(|share| share.signed.content.hash != *hash)
-                }
             })
             .filter_map(|(height, hash)| {
                 let content = CertificationContent::new(hash);

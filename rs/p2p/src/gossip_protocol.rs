@@ -312,8 +312,6 @@ impl Gossip for GossipImpl {
         let (peers, label) = match dst {
             ArtifactDestination::AllPeersInSubnet => (self.get_current_peer_ids(), "all_peers"),
         };
-
-        println!("Gossip Advert {:?}", advert);
         self.metrics
             .adverts_by_action
             .with_label_values(&[label])

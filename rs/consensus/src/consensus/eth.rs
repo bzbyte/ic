@@ -11,7 +11,7 @@ use bzb_execution_layer::engine_api::{
     PayloadAttributesV1, LATEST_TAG,
 };
 use ic_crypto_tree_hash::{LabeledTree, MixedHashTree};
-use ic_interfaces_state_manager::{CertDeliveryError, StateManager, StateReader};
+use ic_interfaces_state_manager::{StateManager, StateReader};
 use ic_logger::{debug, info, ReplicaLogger};
 use ic_types::{
     consensus::certification::Certification,
@@ -105,7 +105,7 @@ impl EthExecutionClient {
         ));
     }
 
-    fn add_certification(&self, certification: Certification) -> Result<(), CertDeliveryError> {
+    fn add_certification(&self, certification: Certification) {
         let mut certification_map = self.certification_pending.lock().unwrap();
         let consensus_height = certification.height;
         // Accept the first certificate if the hash matches
@@ -113,7 +113,10 @@ impl EthExecutionClient {
             certification_map.get_mut(&consensus_height)
         {
             if *state_root != certification.signed.content.hash {
-                return Err(CertDeliveryError::HashNotRequested(consensus_height));
+                panic!(
+                    "Invalid ETH state root certification Expected {:?} Got {:?}",
+                    certification.signed.content.hash, state_root
+                );
             }
             if cert_entry.is_none() {
                 info!(
@@ -123,15 +126,9 @@ impl EthExecutionClient {
                     consensus_height,
                     execution_height
                 );
-                println!(
-                    "Eth Certification {:?} consensus height {}, Exec height {}",
-                    certification, consensus_height, execution_height
-                );
-
                 cert_entry.replace(certification);
             }
         }
-        Ok(())
     }
 
     #[allow(unused)]
@@ -302,8 +299,7 @@ impl StateReader for EthExecutionClient {
 
 impl StateManager for EthExecutionClient {
     fn list_state_hashes_to_certify(&self) -> Vec<(Height, CryptoHashOfPartialState)> {
-        let m: Vec<_> = self
-            .certification_pending
+        self.certification_pending
             .lock()
             .unwrap()
             .iter()
@@ -315,16 +311,10 @@ impl StateManager for EthExecutionClient {
                     }
                 },
             )
-            .collect();
-        debug!(self.log, "Eth hash request {:?}", m.len());
-        println!("Eth hash request {:?}", m.len());
-        m
+            .collect()
     }
 
-    fn deliver_state_certification(
-        &self,
-        certification: Certification,
-    ) -> Result<(), CertDeliveryError> {
+    fn deliver_state_certification(&self, certification: Certification) {
         self.add_certification(certification)
     }
 
@@ -396,7 +386,7 @@ pub struct EthExecution {
 
 impl EthExecution {
     /// build a new ethereum execution
-    pub fn new(
+    fn new(
         eth_payload_builder: Arc<dyn EthPayloadBuilder>,
         eth_message_routing: Arc<dyn EthMessageRouting>,
         eth_state_manager: Arc<dyn StateManager<State = EthExecutionClient>>,
