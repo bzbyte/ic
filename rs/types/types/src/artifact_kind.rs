@@ -103,6 +103,49 @@ impl ArtifactKind for CertificationArtifact {
     }
 }
 
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+pub struct ExecCertificationArtifact;
+
+/// `CertificationArtifact` implements the `ArtifactKind` trait.
+impl ArtifactKind for ExecCertificationArtifact {
+    const TAG: ArtifactTag = ArtifactTag::ExecCertificationArtifact;
+    type Id = ExecCertificationMessageId;
+    type Message = ExecCertificationMessage;
+    type Attribute = ExecCertificationMessageAttribute;
+    type Filter = CertificationMessageFilter;
+
+    /// The function converts a `CertificationMessage` into an advert for a
+    /// `CertificationArtifact`.
+    fn message_to_advert(msg: &ExecCertificationMessage) -> Advert<ExecCertificationArtifact> {
+        let (attribute, id) = match &msg.0 {
+            CertificationMessage::Certification(cert) => (
+                ExecCertificationMessageAttribute(CertificationMessageAttribute::Certification(
+                    cert.height,
+                )),
+                ExecCertificationMessageId(CertificationMessageId {
+                    height: cert.height,
+                    hash: CertificationMessageHash::Certification(crypto_hash(cert)),
+                }),
+            ),
+            CertificationMessage::CertificationShare(share) => (
+                ExecCertificationMessageAttribute(
+                    CertificationMessageAttribute::CertificationShare(share.height),
+                ),
+                ExecCertificationMessageId(CertificationMessageId {
+                    height: share.height,
+                    hash: CertificationMessageHash::CertificationShare(crypto_hash(share)),
+                }),
+            ),
+        };
+        Advert {
+            id,
+            attribute,
+            size: bincode::serialized_size(&msg).unwrap() as usize,
+            integrity_hash: crypto_hash(msg).get(),
+        }
+    }
+}
+
 /// The `ArtifactKind` of DKG messages.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct DkgArtifact;

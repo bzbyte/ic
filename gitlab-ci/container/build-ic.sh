@@ -104,12 +104,11 @@ echo_blue "Purging artifact directories"
 
 BAZEL_ENV=""
 #BAZEL_ENV+="CARGO_BAZEL_REPIN=true "
-if $BUILD_STATIC_SSL 
+if $BUILD_STATIC_SSL
 then
 BAZEL_ENV+="DFINITY_OPENSSL_STATIC=1 "
 fi
 
-#BAZEL_ENV="CARGO_BAZEL_REPIN=true"
 echo_green "Building selected IC artifacts"
 BAZEL_CMD="$BAZEL_ENV bazel build --config=local --ic_version='$VERSION' --ic_version_rc_only='$IC_VERSION_RC_ONLY'"
 BUILD_BINARIES_CMD=$(

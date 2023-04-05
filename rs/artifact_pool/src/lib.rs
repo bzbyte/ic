@@ -4,6 +4,7 @@ pub mod consensus_pool;
 mod consensus_pool_cache;
 pub mod dkg_pool;
 pub mod ecdsa_pool;
+pub mod exec_certification_pool;
 mod height_index;
 pub mod ingress_pool;
 mod inmemory_pool;

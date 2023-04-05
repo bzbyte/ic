@@ -6,7 +6,7 @@ pub(crate) mod block_maker;
 mod catchup_package_maker;
 pub(crate) mod crypto;
 pub mod dkg_key_manager;
-mod eth;
+pub mod eth;
 mod finalizer;
 mod malicious_consensus;
 pub(crate) mod membership;
@@ -39,7 +39,6 @@ use crate::consensus::{
     block_maker::BlockMaker,
     catchup_package_maker::CatchUpPackageMaker,
     dkg_key_manager::DkgKeyManager,
-    eth::build_eth_stubs,
     finalizer::Finalizer,
     metrics::{ConsensusGossipMetrics, ConsensusMetrics},
     notary::Notary,
@@ -85,6 +84,8 @@ use std::sync::RwLock;
 use std::time::Duration;
 use std::{cell::RefCell, sync::Mutex};
 use strum_macros::AsRefStr;
+
+use self::eth::{EthPayloadBuilder, EthMessageRouting};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, AsRefStr)]
 #[strum(serialize_all = "snake_case")]
@@ -156,8 +157,9 @@ impl ConsensusImpl {
         metrics_registry: MetricsRegistry,
         logger: ReplicaLogger,
         local_store_time_reader: Option<Arc<dyn LocalStoreCertifiedTimeReader>>,
+        eth_payload_builder: Arc<dyn EthPayloadBuilder>,
+        eth_message_routing: Arc<dyn EthMessageRouting>
     ) -> Self {
-        let (eth_payload_builder, eth_message_routing) = build_eth_stubs(logger.clone());
         let payload_builder = Arc::new(PayloadBuilderImpl::new(
             replica_config.subnet_id,
             registry_client.clone(),
@@ -644,6 +646,8 @@ pub fn setup(
     logger: ReplicaLogger,
     local_store_time_reader: Option<Arc<dyn LocalStoreCertifiedTimeReader>>,
     registry_poll_delay_duration_ms: u64,
+    eth_payload_builder: Arc<dyn EthPayloadBuilder>,
+    eth_message_routing: Arc<dyn EthMessageRouting>
 ) -> (ConsensusImpl, ConsensusGossipImpl) {
     // Currently, the orchestrator polls the registry every
     // `registry_poll_delay_duration_ms` and writes new updates into the
@@ -678,6 +682,8 @@ pub fn setup(
             metrics_registry.clone(),
             logger,
             local_store_time_reader,
+            eth_payload_builder,
+            eth_message_routing
         ),
         ConsensusGossipImpl::new(message_routing, metrics_registry),
     )

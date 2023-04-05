@@ -14,6 +14,15 @@ mod verifier;
 pub use certifier::{setup, CertifierImpl};
 pub use verifier::VerifierImpl;
 
+/// Certifier type one for consensus and one for execution
+#[derive(Debug)]
+pub enum CertifierType {
+    /// conensus
+    CONSENSUS,
+    /// execution
+    EXECUTION,
+}
+
 /// A trait that encompasses all crypto signing/verification interface required
 /// by the certifier.
 pub trait CertificationCrypto:

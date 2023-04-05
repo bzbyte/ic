@@ -331,6 +331,84 @@ impl<
     }
 }
 
+/// The execution certification `ArtifactClient` to be managed by the `ArtifactManager`.
+pub struct ExecCertificationClient<Pool, T> {
+    /// The certification pool, protected by a read-write lock and automatic
+    /// reference counting.
+    certification_pool: Arc<RwLock<Pool>>,
+    /// The `ArtifactPoolDescriptor` client.
+    client: T,
+}
+
+impl<Pool, T> ExecCertificationClient<Pool, T> {
+    /// The constructor creates a `CertificationClient` instance.
+    pub fn new(certification_pool: Arc<RwLock<Pool>>, client: T) -> Self {
+        Self {
+            certification_pool,
+            client,
+        }
+    }
+}
+
+impl<
+        Pool: GossipPool<ExecCertificationArtifact> + Send + Sync,
+        T: ArtifactPoolDescriptor<ExecCertificationArtifact, Pool> + 'static,
+    > ArtifactClient<ExecCertificationArtifact> for ExecCertificationClient<Pool, T>
+{
+    /// The method checks if the certification pool contains a certification
+    /// message with the given ID.
+    fn has_artifact(&self, msg_id: &ExecCertificationMessageId) -> bool {
+        self.certification_pool.read().unwrap().contains(msg_id)
+    }
+
+    /// The method returns the `CertificationMessage` for the given
+    /// certification message ID if available.
+    fn get_validated_by_identifier(
+        &self,
+        msg_id: &ExecCertificationMessageId,
+    ) -> Option<ExecCertificationMessage> {
+        self.certification_pool
+            .read()
+            .unwrap()
+            .get_validated_by_identifier(msg_id)
+    }
+
+    /// The method returns the certification message filter.
+    fn get_filter(&self) -> CertificationMessageFilter {
+        self.client.get_filter()
+    }
+
+    /// The method returns all adverts for validated certification messages.
+    fn get_all_validated_by_filter(
+        &self,
+        filter: &CertificationMessageFilter,
+    ) -> Vec<Advert<ExecCertificationArtifact>> {
+        self.certification_pool
+            .read()
+            .unwrap()
+            .get_all_validated_by_filter(filter)
+            .map(|msg| ExecCertificationArtifact::message_to_advert(&msg))
+            .collect()
+    }
+
+    /// The method returns the priority function.
+    fn get_priority_function(
+        &self,
+    ) -> PriorityFn<ExecCertificationMessageId, ExecCertificationMessageAttribute> {
+        let certification_pool = &*self.certification_pool.read().unwrap();
+        self.client.get_priority_function(certification_pool)
+    }
+
+    /// The method returns a new (single-chunked) certification tracker,
+    /// ignoring the certification message ID.
+    fn get_chunk_tracker(
+        &self,
+        _id: &ExecCertificationMessageId,
+    ) -> Box<dyn Chunkable + Send + Sync> {
+        Box::new(SingleChunked::Certification)
+    }
+}
+
 /// The DKG client.
 pub struct DkgClient<Pool, T> {
     /// The DKG pool, protected by a read-write lock and automatic reference

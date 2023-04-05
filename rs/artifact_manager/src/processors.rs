@@ -560,6 +560,124 @@ impl<PoolCertification: MutableCertificationPool + Send + Sync + 'static>
     }
 }
 
+/// Execution Certification `OnStateChange` client.
+pub struct ExecCertificationProcessor<PoolCertification> {
+    /// The *Consensus* pool cache.
+    consensus_pool_cache: Arc<dyn ConsensusPoolCache>,
+    /// The certification pool.
+    certification_pool: Arc<RwLock<PoolCertification>>,
+    /// The certifier.
+    client: Box<dyn Certifier>,
+    /// The invalidated artifacts counter.
+    invalidated_artifacts: IntCounter,
+    /// The logger.
+    log: ReplicaLogger,
+}
+
+impl<PoolCertification: MutableCertificationPool + Send + Sync + 'static>
+    ExecCertificationProcessor<PoolCertification>
+{
+    #[allow(clippy::too_many_arguments)]
+    pub fn build<
+        C: Certifier + 'static,
+        G: ArtifactPoolDescriptor<ExecCertificationArtifact, PoolCertification> + 'static,
+        S: Fn(AdvertSendRequest<ExecCertificationArtifact>) + Send + 'static,
+    >(
+        send_advert: S,
+        (certifier, certifier_gossip): (C, G),
+        time_source: Arc<SysTimeSource>,
+        consensus_pool_cache: Arc<dyn ConsensusPoolCache>,
+        certification_pool: Arc<RwLock<PoolCertification>>,
+        log: ReplicaLogger,
+        metrics_registry: MetricsRegistry,
+    ) -> (
+        clients::ExecCertificationClient<PoolCertification, G>,
+        ArtifactProcessorManager<ExecCertificationArtifact>,
+    ) {
+        let client = Self {
+            consensus_pool_cache: consensus_pool_cache.clone(),
+            certification_pool: certification_pool.clone(),
+            client: Box::new(certifier),
+            invalidated_artifacts: metrics_registry.int_counter(
+                "exec_certification_invalidated_artifacts",
+                "The number of invalidated execution certification artifacts",
+            ),
+            log,
+        };
+        let manager = ArtifactProcessorManager::new(
+            time_source,
+            metrics_registry,
+            Box::new(client),
+            send_advert,
+        );
+        (
+            clients::ExecCertificationClient::new(certification_pool, certifier_gossip),
+            manager,
+        )
+    }
+}
+
+impl<PoolCertification: MutableCertificationPool + Send + Sync + 'static>
+    ArtifactProcessor<ExecCertificationArtifact> for ExecCertificationProcessor<PoolCertification>
+{
+    /// The method processes changes in the certification pool.
+    fn process_changes(
+        &self,
+        _time_source: &dyn TimeSource,
+        artifacts: Vec<UnvalidatedArtifact<ExecCertificationMessage>>,
+    ) -> (
+        Vec<AdvertSendRequest<ExecCertificationArtifact>>,
+        ProcessingResult,
+    ) {
+        {
+            let mut certification_pool = self.certification_pool.write().unwrap();
+            for artifact in artifacts {
+                certification_pool.insert(artifact.message.0)
+            }
+        }
+        let mut adverts = Vec::new();
+        let change_set = self.client.on_state_change(
+            self.consensus_pool_cache.as_ref(),
+            self.certification_pool.clone(),
+        );
+        let changed = if !change_set.is_empty() {
+            ProcessingResult::StateChanged
+        } else {
+            ProcessingResult::StateUnchanged
+        };
+
+        for action in change_set.iter() {
+            match action {
+                certification::ChangeAction::AddToValidated(msg) => {
+                    adverts.push(ExecCertificationArtifact::message_to_advert_send_request(
+                        &ExecCertificationMessage(msg.clone()),
+                        ArtifactDestination::AllPeersInSubnet,
+                    ))
+                }
+                certification::ChangeAction::MoveToValidated(msg) => {
+                    adverts.push(ExecCertificationArtifact::message_to_advert_send_request(
+                        &ExecCertificationMessage(msg.clone()),
+                        ArtifactDestination::AllPeersInSubnet,
+                    ))
+                }
+                certification::ChangeAction::HandleInvalid(msg, reason) => {
+                    self.invalidated_artifacts.inc();
+                    warn!(
+                        self.log,
+                        "Invalid Exec certification message ({:?}): {:?}", reason, msg
+                    );
+                }
+                _ => {}
+            }
+        }
+        self.certification_pool
+            .write()
+            .unwrap()
+            .apply_changes(change_set);
+        (adverts, changed)
+    }
+}
+
 /// Distributed key generation (DKG) `OnStateChange` client.
 pub struct DkgProcessor<PoolDkg> {
     /// The DKG pool, protected by a read-write lock and automatic reference
