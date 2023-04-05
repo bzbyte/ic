@@ -105,6 +105,7 @@ prestorecon.o
 **/bin/boundary-node-prober
 **/bin/ic-balance-exporter
 testnet/config/ssh_authorized_keys/admin
+Cargo.Bazel.StaticOpenSSL.json.lock
 
 # Boundary node control plane binary
 boundary-node-control-plane
@@ -133,3 +134,8 @@ user.bazelrc
 
 # OS X
 .DS_Store
+
+/Cargo.Bazel.StaticOpenSSL.json.lock
+/Cargo.Bazel.StaticOpenSSL.toml.lock
+/Cargo.Bazel.json.lock
+/Cargo.Bazel.toml.lock

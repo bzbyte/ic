@@ -241,6 +241,8 @@ pub fn construct_ic_stack(
 
     let state_sync = StateSync::new(state_manager.clone(), replica_logger.clone());
 
+    let eth_execution = ic_consensus::consensus::eth::build_eth(replica_logger.clone());
+
     let (ingress_ingestion_service, p2p_runner) = create_networking_stack(
         metrics_registry,
         replica_logger,
@@ -270,6 +272,7 @@ pub fn construct_ic_stack(
         local_store_time_reader,
         canister_http_adapter_client,
         config.nns_registry_replicator.poll_delay_duration_ms,
+        eth_execution,
     );
     Ok((
         crypto,
