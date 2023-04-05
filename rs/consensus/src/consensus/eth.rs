@@ -302,7 +302,7 @@ impl StateReader for EthExecutionClient {
 
 impl StateManager for EthExecutionClient {
     fn list_state_hashes_to_certify(&self) -> Vec<(Height, CryptoHashOfPartialState)> {
-        let m = self
+        let m: Vec<_> = self
             .certification_pending
             .lock()
             .unwrap()
@@ -316,8 +316,8 @@ impl StateManager for EthExecutionClient {
                 },
             )
             .collect();
-        debug!(self.log, "Eth hash request {m:?}");
-        println!("Eth hash request {m:?}");
+        debug!(self.log, "Eth hash request {:?}", m.len());
+        println!("Eth hash request {:?}", m.len());
         m
     }
 

@@ -357,7 +357,7 @@ impl<
 {
     /// The method checks if the certification pool contains a certification
     /// message with the given ID.
-    fn has_artifact(&self, msg_id: &CertificationMessageId) -> bool {
+    fn has_artifact(&self, msg_id: &ExecCertificationMessageId) -> bool {
         self.certification_pool.read().unwrap().contains(msg_id)
     }
 
@@ -365,8 +365,8 @@ impl<
     /// certification message ID if available.
     fn get_validated_by_identifier(
         &self,
-        msg_id: &CertificationMessageId,
-    ) -> Option<CertificationMessage> {
+        msg_id: &ExecCertificationMessageId,
+    ) -> Option<ExecCertificationMessage> {
         self.certification_pool
             .read()
             .unwrap()
@@ -394,14 +394,17 @@ impl<
     /// The method returns the priority function.
     fn get_priority_function(
         &self,
-    ) -> PriorityFn<CertificationMessageId, CertificationMessageAttribute> {
+    ) -> PriorityFn<ExecCertificationMessageId, ExecCertificationMessageAttribute> {
         let certification_pool = &*self.certification_pool.read().unwrap();
         self.client.get_priority_function(certification_pool)
     }
 
     /// The method returns a new (single-chunked) certification tracker,
     /// ignoring the certification message ID.
-    fn get_chunk_tracker(&self, _id: &CertificationMessageId) -> Box<dyn Chunkable + Send + Sync> {
+    fn get_chunk_tracker(
+        &self,
+        _id: &ExecCertificationMessageId,
+    ) -> Box<dyn Chunkable + Send + Sync> {
         Box::new(SingleChunked::Certification)
     }
 }

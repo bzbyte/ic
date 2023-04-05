@@ -58,6 +58,9 @@ impl ArtifactManager for ArtifactManagerImpl {
         peer_id: &NodeId,
     ) -> Result<(), OnArtifactError<artifact::Artifact>> {
         let tag: ArtifactTag = (&msg).into();
+        if let ArtifactTag::ExecCertificationArtifact = tag {
+            println!("Exec Certification on artifact");
+        }
         if let Some(client) = self.clients.get(&tag) {
             return client.on_artifact(msg, advert, *peer_id);
         }
@@ -68,7 +71,9 @@ impl ArtifactManager for ArtifactManagerImpl {
     /// artifact with the given ID in the pool.
     fn has_artifact(&self, message_id: &artifact::ArtifactId) -> bool {
         let tag: ArtifactTag = message_id.into();
-
+        if let ArtifactTag::ExecCertificationArtifact = tag {
+            println!("Exec Certification has artifact");
+        }
         match self.clients.get(&tag) {
             Some(client) => client.has_artifact(message_id),
             None => false,
@@ -83,6 +88,10 @@ impl ArtifactManager for ArtifactManagerImpl {
     ) -> Option<Box<dyn ChunkableArtifact + '_>> {
         // TODO: P2P-513
         let tag: ArtifactTag = message_id.into();
+
+        if let ArtifactTag::ExecCertificationArtifact = tag {
+            println!("Exec Certification get validated by identifier");
+        }
 
         match self.clients.get(&tag) {
             Some(client) => client.get_validated_by_identifier(message_id),
@@ -142,7 +151,9 @@ impl ArtifactManager for ArtifactManagerImpl {
         artifact_id: &artifact::ArtifactId,
     ) -> Option<Box<dyn Chunkable + Send + Sync>> {
         let tag: ArtifactTag = artifact_id.into();
-
+        if let ArtifactTag::ExecCertificationArtifact = tag {
+            println!("Exec Certification get chunk tracker");
+        }
         self.clients
             .get(&tag)
             .and_then(|client| client.get_chunk_tracker(artifact_id))

@@ -9,10 +9,11 @@ use ic_interfaces::{
 };
 use ic_logger::ReplicaLogger;
 use ic_metrics::MetricsRegistry;
+use ic_types::artifact::ExecCertificationMessageId;
+use ic_types::consensus::certification::ExecCertificationMessage;
 use ic_types::crypto::crypto_hash;
 use ic_types::{
     artifact::CertificationMessageFilter,
-    artifact::CertificationMessageId,
     artifact_kind::ExecCertificationArtifact,
     consensus::certification::{
         Certification, CertificationMessage, CertificationMessageHash, CertificationShare,
@@ -253,28 +254,28 @@ impl CertificationPool for ExecCertificationPoolImpl {
 }
 
 impl GossipPool<ExecCertificationArtifact> for ExecCertificationPoolImpl {
-    fn contains(&self, id: &CertificationMessageId) -> bool {
+    fn contains(&self, id: &ExecCertificationMessageId) -> bool {
         // TODO: this is a very inefficient implementation as we compute all hashes
         // every time.
-        match &id.hash {
+        match &id.0.hash {
             CertificationMessageHash::CertificationShare(hash) => {
                 self.unvalidated_shares
-                    .lookup(id.height)
+                    .lookup(id.0.height)
                     .any(|share| &crypto_hash(share) == hash)
                     || self
                         .persistent_pool
                         .certification_shares()
-                        .get_by_height(id.height)
+                        .get_by_height(id.0.height)
                         .any(|share| &crypto_hash(&share) == hash)
             }
             CertificationMessageHash::Certification(hash) => {
                 self.unvalidated_certifications
-                    .lookup(id.height)
+                    .lookup(id.0.height)
                     .any(|cert| &crypto_hash(cert) == hash)
                     || self
                         .persistent_pool
                         .certifications()
-                        .get_by_height(id.height)
+                        .get_by_height(id.0.height)
                         .any(|cert| &crypto_hash(&cert) == hash)
             }
         }
@@ -282,19 +283,23 @@ impl GossipPool<ExecCertificationArtifact> for ExecCertificationPoolImpl {
 
     fn get_validated_by_identifier(
         &self,
-        id: &CertificationMessageId,
-    ) -> Option<CertificationMessage> {
-        match &id.hash {
+        id: &ExecCertificationMessageId,
+    ) -> Option<ExecCertificationMessage> {
+        match &id.0.hash {
             CertificationMessageHash::CertificationShare(hash) => self
-                .shares_at_height(id.height)
+                .shares_at_height(id.0.height)
                 .find(|share| &crypto_hash(share) == hash)
-                .map(CertificationMessage::CertificationShare),
+                .map(|share| {
+                    ExecCertificationMessage(CertificationMessage::CertificationShare(share))
+                }),
             CertificationMessageHash::Certification(hash) => self
-                .certification_at_height(id.height)
+                .certification_at_height(id.0.height)
                 .next()
                 .and_then(|cert| {
                     if &crypto_hash(&cert) == hash {
-                        Some(CertificationMessage::Certification(cert))
+                        Some(ExecCertificationMessage(
+                            CertificationMessage::Certification(cert),
+                        ))
                     } else {
                         None
                     }
@@ -305,17 +310,17 @@ impl GossipPool<ExecCertificationArtifact> for ExecCertificationPoolImpl {
     fn get_all_validated_by_filter(
         &self,
         filter: &CertificationMessageFilter,
-    ) -> Box<dyn Iterator<Item = CertificationMessage> + '_> {
+    ) -> Box<dyn Iterator<Item = ExecCertificationMessage> + '_> {
         // Return all validated certifications and all shares above the filter
         let min_height = filter.height.get();
         let all_certs = self
             .validated_certifications()
             .filter(move |cert| cert.height > Height::from(min_height))
-            .map(CertificationMessage::Certification);
+            .map(|cert| ExecCertificationMessage(CertificationMessage::Certification(cert)));
         let all_shares = self
             .validated_shares()
             .filter(move |share| share.height > Height::from(min_height))
-            .map(CertificationMessage::CertificationShare);
+            .map(|share| ExecCertificationMessage(CertificationMessage::CertificationShare(share)));
         Box::new(all_certs.chain(all_shares))
     }
 }

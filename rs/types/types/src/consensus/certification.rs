@@ -22,6 +22,9 @@ pub enum CertificationMessage {
     CertificationShare(CertificationShare),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+pub struct ExecCertificationMessage(pub CertificationMessage);
+
 impl HasHeight for CertificationMessage {
     fn height(&self) -> Height {
         match self {

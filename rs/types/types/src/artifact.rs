@@ -35,7 +35,7 @@ use strum_macros::{EnumIter, IntoStaticStr};
 
 pub use crate::{
     consensus::{
-        certification::CertificationMessage,
+        certification::{CertificationMessage, ExecCertificationMessage},
         dkg::Message as DkgMessage,
         ecdsa::{EcdsaArtifactId, EcdsaMessage, EcdsaMessageAttribute},
         ConsensusMessage, ConsensusMessageAttribute,
@@ -57,6 +57,7 @@ pub enum Artifact {
     CanisterHttpMessage(CanisterHttpResponseShare),
     FileTreeSync(FileTreeSyncArtifact),
     StateSync(StateSyncMessage),
+    ExecCertificationMessage(ExecCertificationMessage),
 }
 
 /// Artifact attribute type.
@@ -71,6 +72,7 @@ pub enum ArtifactAttribute {
     CanisterHttpMessage(CanisterHttpResponseAttribute),
     FileTreeSync(FileTreeSyncAttribute),
     StateSync(StateSyncAttribute),
+    ExecCertificationMessage(ExecCertificationMessageAttribute),
 }
 
 /// Artifact identifier type.
@@ -85,6 +87,7 @@ pub enum ArtifactId {
     EcdsaMessage(EcdsaMessageId),
     FileTreeSync(FileTreeSyncId),
     StateSync(StateSyncArtifactId),
+    ExecCertificationMessage(ExecCertificationMessageId),
 }
 
 /// Artifact tags is used to select an artifact subtype when we do not have
@@ -144,6 +147,7 @@ impl From<&ArtifactId> for ArtifactTag {
             ArtifactId::FileTreeSync(_) => ArtifactTag::FileTreeSyncArtifact,
             ArtifactId::IngressMessage(_) => ArtifactTag::IngressArtifact,
             ArtifactId::StateSync(_) => ArtifactTag::StateSyncArtifact,
+            ArtifactId::ExecCertificationMessage(_) => ArtifactTag::ExecCertificationArtifact,
         }
     }
 }
@@ -161,6 +165,7 @@ impl From<&Artifact> for ArtifactTag {
             Artifact::CanisterHttpMessage(_) => ArtifactTag::CanisterHttpArtifact,
             Artifact::FileTreeSync(_) => ArtifactTag::FileTreeSyncArtifact,
             Artifact::StateSync(_) => ArtifactTag::StateSyncArtifact,
+            Artifact::ExecCertificationMessage(_) => ArtifactTag::ExecCertificationArtifact,
         }
     }
 }
@@ -212,9 +217,9 @@ pub type ArtifactPriorityFn =
 /// instead of all of them individually.
 pub trait ArtifactKind: Sized {
     const TAG: ArtifactTag;
-    type Id;
-    type Message;
-    type Attribute;
+    type Id: core::fmt::Debug;
+    type Message: core::fmt::Debug;
+    type Attribute: core::fmt::Debug;
     type Filter: Default;
 
     /// Returns the advert of the given message.
@@ -338,6 +343,7 @@ impl ArtifactDestination {
 }
 
 /// Wrapper to generate the advert send requests
+#[derive(Debug)]
 pub struct AdvertSendRequest<Artifact: ArtifactKind> {
     pub advert: Advert<Artifact>,
     pub dest: ArtifactDestination,
@@ -427,12 +433,18 @@ pub struct CertificationMessageId {
     pub height: Height,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ExecCertificationMessageId(pub CertificationMessageId);
+
 /// The certification message attribute used by the priority function.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CertificationMessageAttribute {
     Certification(Height),
     CertificationShare(Height),
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ExecCertificationMessageAttribute(pub CertificationMessageAttribute);
 
 /// Certification message filter is by height.
 #[derive(Default, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

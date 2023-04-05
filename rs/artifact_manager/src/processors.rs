@@ -622,7 +622,7 @@ impl<PoolCertification: MutableCertificationPool + Send + Sync + 'static>
     fn process_changes(
         &self,
         _time_source: &dyn TimeSource,
-        artifacts: Vec<UnvalidatedArtifact<CertificationMessage>>,
+        artifacts: Vec<UnvalidatedArtifact<ExecCertificationMessage>>,
     ) -> (
         Vec<AdvertSendRequest<ExecCertificationArtifact>>,
         ProcessingResult,
@@ -630,7 +630,7 @@ impl<PoolCertification: MutableCertificationPool + Send + Sync + 'static>
         {
             let mut certification_pool = self.certification_pool.write().unwrap();
             for artifact in artifacts {
-                certification_pool.insert(artifact.message)
+                certification_pool.insert(artifact.message.0)
             }
         }
         let mut adverts = Vec::new();
@@ -648,13 +648,13 @@ impl<PoolCertification: MutableCertificationPool + Send + Sync + 'static>
             match action {
                 certification::ChangeAction::AddToValidated(msg) => {
                     adverts.push(ExecCertificationArtifact::message_to_advert_send_request(
-                        msg,
+                        &ExecCertificationMessage(msg.clone()),
                         ArtifactDestination::AllPeersInSubnet,
                     ))
                 }
                 certification::ChangeAction::MoveToValidated(msg) => {
                     adverts.push(ExecCertificationArtifact::message_to_advert_send_request(
-                        msg,
+                        &ExecCertificationMessage(msg.clone()),
                         ArtifactDestination::AllPeersInSubnet,
                     ))
                 }
@@ -668,6 +668,7 @@ impl<PoolCertification: MutableCertificationPool + Send + Sync + 'static>
                 _ => {}
             }
         }
+        println!("Exec adverts created {:?}", adverts);
         self.certification_pool
             .write()
             .unwrap()

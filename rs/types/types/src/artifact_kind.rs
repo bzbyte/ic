@@ -103,35 +103,39 @@ impl ArtifactKind for CertificationArtifact {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub struct ExecCertificationArtifact;
 
 /// `CertificationArtifact` implements the `ArtifactKind` trait.
 impl ArtifactKind for ExecCertificationArtifact {
     const TAG: ArtifactTag = ArtifactTag::ExecCertificationArtifact;
-    type Id = CertificationMessageId;
-    type Message = CertificationMessage;
-    type Attribute = CertificationMessageAttribute;
+    type Id = ExecCertificationMessageId;
+    type Message = ExecCertificationMessage;
+    type Attribute = ExecCertificationMessageAttribute;
     type Filter = CertificationMessageFilter;
 
     /// The function converts a `CertificationMessage` into an advert for a
     /// `CertificationArtifact`.
-    fn message_to_advert(msg: &CertificationMessage) -> Advert<ExecCertificationArtifact> {
+    fn message_to_advert(msg: &ExecCertificationMessage) -> Advert<ExecCertificationArtifact> {
         use CertificationMessage::*;
-        let (attribute, id) = match msg {
-            Certification(cert) => (
-                CertificationMessageAttribute::Certification(cert.height),
-                CertificationMessageId {
+        let (attribute, id) = match &msg.0 {
+            CertificationMessage::Certification(cert) => (
+                ExecCertificationMessageAttribute(CertificationMessageAttribute::Certification(
+                    cert.height,
+                )),
+                ExecCertificationMessageId(CertificationMessageId {
                     height: cert.height,
                     hash: CertificationMessageHash::Certification(crypto_hash(cert)),
-                },
+                }),
             ),
-            CertificationShare(share) => (
-                CertificationMessageAttribute::CertificationShare(share.height),
-                CertificationMessageId {
+            CertificationMessage::CertificationShare(share) => (
+                ExecCertificationMessageAttribute(
+                    CertificationMessageAttribute::CertificationShare(share.height),
+                ),
+                ExecCertificationMessageId(CertificationMessageId {
                     height: share.height,
                     hash: CertificationMessageHash::CertificationShare(crypto_hash(share)),
-                },
+                }),
             ),
         };
         Advert {

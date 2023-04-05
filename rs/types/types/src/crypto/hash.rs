@@ -7,7 +7,9 @@ use crate::canister_http::{
 use crate::consensus::certification::CertificationMessage;
 use crate::consensus::dkg as consensus_dkg;
 use crate::consensus::{
-    certification::{Certification, CertificationContent, CertificationShare},
+    certification::{
+        Certification, CertificationContent, CertificationShare, ExecCertificationMessage,
+    },
     ecdsa::{
         EcdsaComplaintContent, EcdsaMessage, EcdsaOpeningContent, EcdsaSigShare, EcdsaTranscript,
     },
@@ -56,6 +58,10 @@ pub(crate) const DOMAIN_CERTIFICATION_CONTENT: &str = "ic-state-root";
 const DOMAIN_CERTIFICATION: &str = "certification_domain";
 const DOMAIN_CERTIFICATION_SHARE: &str = "certification_share_domain";
 
+pub(crate) const DOMAIN_EXEC_CERTIFICATION_CONTENT: &str = "exec-state-root";
+const DOMAIN_EXEC_CERTIFICATION: &str = "exec_certification_domain";
+const DOMAIN_EXEC_CERTIFICATION_SHARE: &str = "exec_certification_share_domain";
+
 pub(crate) const DOMAIN_DEALING_CONTENT: &str = "dealing_content_non_interactive";
 
 const DOMAIN_DKG_MESSAGE: &str = "dkg_message_non_interactive";
@@ -82,6 +88,7 @@ const DOMAIN_CATCH_UP_PACKAGE_SHARE: &str = "catch_up_package_share_domain";
 const DOMAIN_STATE_SYNC_MESSAGE: &str = "state_sync_message_domain";
 const DOMAIN_CONSENSUS_MESSAGE: &str = "consensus_message_domain";
 const DOMAIN_CERTIFICATION_MESSAGE: &str = "certification_message_domain";
+const DOMAIN_EXEC_CERTIFICATION_MESSAGE: &str = "exec_certification_message_domain";
 const DOMAIN_ECDSA_MESSAGE: &str = "ic-threshold-ecdsa-message-domain";
 pub(crate) const DOMAIN_IDKG_DEALING: &str = "ic-idkg-dealing-domain";
 pub(crate) const DOMAIN_SIGNED_IDKG_DEALING: &str = "ic-idkg-signed-dealing-domain";
@@ -176,6 +183,7 @@ mod private {
     impl CryptoHashDomainSeal for StateSyncMessage {}
     impl CryptoHashDomainSeal for ConsensusMessage {}
     impl CryptoHashDomainSeal for CertificationMessage {}
+    impl CryptoHashDomainSeal for ExecCertificationMessage {}
 
     impl CryptoHashDomainSeal for EcdsaMessage {}
 
@@ -403,6 +411,12 @@ impl CryptoHashDomain for ConsensusMessage {
 impl CryptoHashDomain for CertificationMessage {
     fn domain(&self) -> String {
         DOMAIN_CERTIFICATION_MESSAGE.to_string()
+    }
+}
+
+impl CryptoHashDomain for ExecCertificationMessage {
+    fn domain(&self) -> String {
+        DOMAIN_EXEC_CERTIFICATION_MESSAGE.to_string()
     }
 }
 

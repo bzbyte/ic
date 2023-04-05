@@ -14,6 +14,8 @@ use ic_interfaces_state_manager::StateManager;
 use ic_logger::{debug, error, trace, ReplicaLogger};
 use ic_metrics::{buckets::decimal_buckets, MetricsRegistry};
 use ic_replicated_state::ReplicatedState;
+use ic_types::artifact::ExecCertificationMessageAttribute;
+use ic_types::artifact::ExecCertificationMessageId;
 use ic_types::artifact_kind::ExecCertificationArtifact;
 use ic_types::consensus::{Committee, HasCommittee, HasHeight};
 use ic_types::{
@@ -128,13 +130,17 @@ impl<Pool: CertificationPool, T> ArtifactPoolDescriptor<ExecCertificationArtifac
     fn get_priority_function(
         &self,
         certification_pool: &Pool,
-    ) -> PriorityFn<CertificationMessageId, CertificationMessageAttribute> {
+    ) -> PriorityFn<ExecCertificationMessageId, ExecCertificationMessageAttribute> {
         let certified_heights = certification_pool.certified_heights();
         let cup_height = self.consensus_pool_cache.catch_up_package().height();
         Box::new(move |_, attribute| {
             let height = match attribute {
-                CertificationMessageAttribute::Certification(height) => height,
-                CertificationMessageAttribute::CertificationShare(height) => height,
+                ExecCertificationMessageAttribute(
+                    CertificationMessageAttribute::Certification(height),
+                ) => height,
+                ExecCertificationMessageAttribute(
+                    CertificationMessageAttribute::CertificationShare(height),
+                ) => height,
             };
             // We drop all artifacts below the CUP height or those for which we have a full
             // certification already.
@@ -258,7 +264,7 @@ impl<T> Certifier for CertifierImpl<T> {
 
         println!(
             "Received hash(es) to be certified in {:?} {:?} {:?}",
-            &state_hashes_to_certify,
+            &state_hashes_to_certify.len(),
             self.certifier_type,
             start.elapsed()
         );
@@ -590,7 +596,6 @@ impl<T> CertifierImpl<T> {
 
         // check if the certification contains the same state hash as our local one. If
         // not, we consider the certification invalid.
-        /*
         if hash != &certification.signed.content.hash {
             return Some(ChangeAction::HandleInvalid(
                 msg,
@@ -599,7 +604,7 @@ impl<T> CertifierImpl<T> {
                     hash, certification.signed.content.hash
                 ),
             ));
-        }*/
+        }
 
         // Verify the certification signature.
         match verifier.validate(
@@ -632,7 +637,6 @@ impl<T> CertifierImpl<T> {
         let content = &share.signed.content;
         // If the share has an invalid content or does not belong to the
         // committee
-        /*
         if !hash.eq(&content.hash) {
             return Some(ChangeAction::HandleInvalid(
                 msg,
@@ -641,7 +645,7 @@ impl<T> CertifierImpl<T> {
                     hash, content.hash
                 ),
             ));
-        }*/
+        }
         let signer = share.signed.signature.signer;
         match self.membership.node_belongs_to_threshold_committee(
             signer,
