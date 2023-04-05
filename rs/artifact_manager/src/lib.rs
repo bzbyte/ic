@@ -418,6 +418,51 @@ pub fn create_certification_handlers<
     )
 }
 
+/// Build a execution certification handler.
+/// - The mutable persistent pool stores 'CertificationArtifact'
+/// - Wrappers are provided to read the pool as the wrapped ExecCertificationArtifact
+///   by implmenting ValidatedPoolReader adapter.
+/// - Layers below artifact manager i.e. P2P use ExecCertificationArtifact by
+///   send_advert + PriorityFnAndFilterProducer specializations
+pub fn create_execcertification_handlers<
+    PoolCertification: MutablePool<ExecCertificationArtifact, CertificationChangeSet>
+        + ValidatedPoolReader<ExecCertificationArtifact>
+        + Send
+        + Sync
+        + 'static,
+    C: ChangeSetProducer<PoolCertification, ChangeSet = CertificationChangeSet> + 'static,
+    G: PriorityFnAndFilterProducer<ExecCertificationArtifact, PoolCertification> + 'static,
+    S: Fn(Advert<ExecCertificationArtifact>) + Send + 'static,
+>(
+    send_advert: S,
+    (certifier, certifier_gossip): (C, G),
+    time_source: Arc<SysTimeSource>,
+    certification_pool: Arc<RwLock<PoolCertification>>,
+    metrics_registry: MetricsRegistry,
+) -> (
+    ArtifactClientHandle<ExecCertificationArtifact>,
+    Box<dyn JoinGuard>,
+) {
+    let client = processors::Processor::new(certification_pool.clone(), Box::new(certifier));
+    let (jh, sender) = run_artifact_processor(
+        time_source.clone(),
+        metrics_registry,
+        Box::new(client),
+        send_advert,
+    );
+    (
+        ArtifactClientHandle::<ExecCertificationArtifact> {
+            sender,
+            pool_reader: Box::new(pool_readers::ExecCertificationClient::new(
+                certification_pool,
+                certifier_gossip,
+            )),
+            time_source,
+        },
+        jh,
+    )
+}
+
 pub fn create_dkg_handlers<
     PoolDkg: MutablePool<DkgArtifact, DkgChangeSet>
         + Send

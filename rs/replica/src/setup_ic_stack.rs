@@ -238,12 +238,15 @@ pub fn construct_ic_stack(
         log.clone(),
         subnet_type,
     );
+
     // ---------- CONSENSUS AND P2P DEPS FOLLOW ----------
     let state_sync = StateSync::new(state_manager.clone(), log.clone());
     let sev_handshake = Arc::new(Sev::new(node_id, registry.clone()));
     let local_store_cert_time_reader: Arc<dyn LocalStoreCertifiedTimeReader> = Arc::new(
         LocalStoreImpl::new(config.registry_client.local_store.clone()),
     );
+    let eth_execution = ic_consensus::consensus::eth::build_eth(log.clone());
+
     let (ingress_ingestion_service, p2p_runner) = create_networking_stack(
         metrics_registry,
         log.clone(),
@@ -272,6 +275,7 @@ pub fn construct_ic_stack(
         local_store_cert_time_reader,
         canister_http_adapter_client,
         config.nns_registry_replicator.poll_delay_duration_ms,
+        eth_execution,
     );
     // ---------- PUBLIC ENDPOINT DEPS FOLLOW ----------
     ic_http_endpoints_public::start_server(

@@ -35,7 +35,7 @@ use strum_macros::{EnumIter, IntoStaticStr};
 
 pub use crate::{
     consensus::{
-        certification::CertificationMessage,
+        certification::{CertificationMessage, ExecCertificationMessage},
         dkg::Message as DkgMessage,
         ecdsa::{EcdsaArtifactId, EcdsaMessage, EcdsaMessageAttribute},
         ConsensusMessage, ConsensusMessageAttribute,
@@ -57,6 +57,7 @@ pub enum Artifact {
     CanisterHttpMessage(CanisterHttpResponseShare),
     FileTreeSync(FileTreeSyncArtifact),
     StateSync(StateSyncMessage),
+    ExecCertificationMessage(ExecCertificationMessage),
 }
 
 /// Artifact attribute type.
@@ -71,6 +72,7 @@ pub enum ArtifactAttribute {
     CanisterHttpMessage(CanisterHttpResponseAttribute),
     FileTreeSync(FileTreeSyncAttribute),
     StateSync(()),
+    ExecCertificationMessage(ExecCertificationMessageAttribute),
 }
 
 /// Artifact identifier type.
@@ -85,6 +87,7 @@ pub enum ArtifactId {
     EcdsaMessage(EcdsaMessageId),
     FileTreeSync(FileTreeSyncId),
     StateSync(StateSyncArtifactId),
+    ExecCertificationMessage(ExecCertificationMessageId),
 }
 
 /// Artifact tags is used to select an artifact subtype when we do not have
@@ -109,6 +112,8 @@ pub enum ArtifactTag {
     IngressArtifact,
     #[strum(serialize = "state_sync")]
     StateSyncArtifact,
+    #[strum(serialize = "exec_certification")]
+    ExecCertificationArtifact,
 }
 
 impl std::fmt::Display for ArtifactTag {
@@ -125,6 +130,7 @@ impl std::fmt::Display for ArtifactTag {
                 ArtifactTag::FileTreeSyncArtifact => "FileTreeSync",
                 ArtifactTag::IngressArtifact => "Ingress",
                 ArtifactTag::StateSyncArtifact => "StateSync",
+                ArtifactTag::ExecCertificationArtifact => "ExecCertificationArtifact",
             }
         )
     }
@@ -141,6 +147,7 @@ impl From<&ArtifactId> for ArtifactTag {
             ArtifactId::FileTreeSync(_) => ArtifactTag::FileTreeSyncArtifact,
             ArtifactId::IngressMessage(_) => ArtifactTag::IngressArtifact,
             ArtifactId::StateSync(_) => ArtifactTag::StateSyncArtifact,
+            ArtifactId::ExecCertificationMessage(_) => ArtifactTag::ExecCertificationArtifact,
         }
     }
 }
@@ -158,6 +165,7 @@ impl From<&Artifact> for ArtifactTag {
             Artifact::CanisterHttpMessage(_) => ArtifactTag::CanisterHttpArtifact,
             Artifact::FileTreeSync(_) => ArtifactTag::FileTreeSyncArtifact,
             Artifact::StateSync(_) => ArtifactTag::StateSyncArtifact,
+            Artifact::ExecCertificationMessage(_) => ArtifactTag::ExecCertificationArtifact,
         }
     }
 }
@@ -371,12 +379,18 @@ pub struct CertificationMessageId {
     pub height: Height,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ExecCertificationMessageId(pub CertificationMessageId);
+
 /// The certification message attribute used by the priority function.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CertificationMessageAttribute {
     Certification(Height),
     CertificationShare(Height),
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ExecCertificationMessageAttribute(pub CertificationMessageAttribute);
 
 /// Certification message filter is by height.
 #[derive(Default, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
