@@ -319,6 +319,7 @@ impl GossipImpl {
             Artifact::ConsensusMessage(msg) => ic_types::crypto::crypto_hash(msg).get(),
             Artifact::IngressMessage(msg) => ic_types::crypto::crypto_hash(msg.binary()).get(),
             Artifact::CertificationMessage(msg) => ic_types::crypto::crypto_hash(msg).get(),
+            Artifact::ExecCertificationMessage(msg) => ic_types::crypto::crypto_hash(msg).get(),
             Artifact::DkgMessage(msg) => ic_types::crypto::crypto_hash(msg).get(),
             Artifact::EcdsaMessage(msg) => ic_types::crypto::crypto_hash(msg).get(),
             Artifact::CanisterHttpMessage(msg) => ic_types::crypto::crypto_hash(msg).get(),

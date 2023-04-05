@@ -307,6 +307,105 @@ impl<
     }
 }
 
+/// Execution Certification `OnStateChange` client.
+pub struct ExecCertificationProcessor<PoolCertification> {
+    /// The certification pool.
+    certification_pool: Arc<RwLock<PoolCertification>>,
+    /// The certifier.
+    client: Box<dyn ChangeSetProducer<PoolCertification, ChangeSet = CertificationChangeSet>>,
+    /// The invalidated artifacts counter.
+    invalidated_artifacts: IntCounter,
+    /// The logger.
+    log: ReplicaLogger,
+}
+
+impl<PoolCertification> ExecCertificationProcessor<PoolCertification> {
+    pub fn new(
+        certification_pool: Arc<RwLock<PoolCertification>>,
+        client: Box<dyn ChangeSetProducer<PoolCertification, ChangeSet = CertificationChangeSet>>,
+        log: ReplicaLogger,
+        metrics_registry: &MetricsRegistry,
+    ) -> Self {
+        Self {
+            certification_pool,
+            client,
+            log,
+            invalidated_artifacts: metrics_registry.int_counter(
+                "exec_certification_invalidated_artifacts",
+                "The number of invalidated exec certification artifacts",
+            ),
+        }
+    }
+}
+
+/// Execution certification: The mutable pool backing the executable certifier
+/// save the same objects consensus certifier i.e. CertificationArtifact
+///
+/// On wire these CertificationArtifact are wrapped in ExecCertificationArtifact
+/// new type, this lets the artifact manager multiplex the two type of
+/// certification messages to their respective pools.
+impl<
+        PoolCertification: MutablePool<CertificationArtifact, CertificationChangeSet> + Send + Sync + 'static,
+    > ArtifactProcessor<ExecCertificationArtifact>
+    for ExecCertificationProcessor<PoolCertification>
+{
+    /// The method processes changes in the certification pool.
+    fn process_changes(
+        &self,
+        time_source: &dyn TimeSource,
+        artifacts: Vec<UnvalidatedArtifact<ExecCertificationMessage>>,
+    ) -> (Vec<Advert<ExecCertificationArtifact>>, ProcessingResult) {
+        {
+            let mut certification_pool = self.certification_pool.write().unwrap();
+            for artifact in artifacts {
+                let certification_artifact = UnvalidatedArtifact {
+                    message: artifact.message.0,
+                    peer_id: artifact.peer_id,
+                    timestamp: artifact.timestamp,
+                };
+                certification_pool.insert(certification_artifact)
+            }
+        }
+        let mut adverts = Vec::new();
+        let change_set = self
+            .client
+            .on_state_change(&*self.certification_pool.read().unwrap());
+        let changed = if !change_set.is_empty() {
+            ProcessingResult::StateChanged
+        } else {
+            ProcessingResult::StateUnchanged
+        };
+
+        for action in change_set.iter() {
+            match action {
+                CertificationChangeAction::AddToValidated(msg) => {
+                    adverts.push(ExecCertificationArtifact::message_to_advert(
+                        &ExecCertificationMessage(msg.clone()),
+                    ));
+                }
+                CertificationChangeAction::MoveToValidated(msg) => {
+                    adverts.push(ExecCertificationArtifact::message_to_advert(
+                        &ExecCertificationMessage(msg.clone()),
+                    ));
+                }
+                CertificationChangeAction::HandleInvalid(msg, reason) => {
+                    self.invalidated_artifacts.inc();
+                    warn!(
+                        self.log,
+                        "Invalid exec certification message ({:?}): {:?}", reason, msg
+                    );
+                }
+                _ => {}
+            }
+        }
+        self.certification_pool
+            .write()
+            .unwrap()
+            .apply_changes(time_source, change_set);
+        (adverts, changed)
+    }
+}
+
 /// Distributed key generation (DKG) `OnStateChange` client.
 pub struct DkgProcessor<PoolDkg> {
     /// The DKG pool, protected by a read-write lock and automatic reference

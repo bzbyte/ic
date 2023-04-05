@@ -1257,8 +1257,17 @@ impl PersistentHeightIndexedPool<CertificationMessage> {
         read_only: bool,
         log: ReplicaLogger,
     ) -> PersistentHeightIndexedPool<CertificationMessage> {
+        Self::new_certification_pool_with_path(config, read_only, "certification", log)
+    }
+
+    pub fn new_certification_pool_with_path(
+        config: LMDBConfig,
+        read_only: bool,
+        path_str: &str,
+        log: ReplicaLogger,
+    ) -> PersistentHeightIndexedPool<CertificationMessage> {
         let mut path = config.persistent_pool_validated_persistent_db_path;
-        path.push("certification");
+        path.push(path_str);
         std::fs::create_dir_all(path.as_path()).ok();
         PersistentHeightIndexedPool::new(path.as_path(), read_only, log)
     }

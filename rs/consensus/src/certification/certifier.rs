@@ -1,4 +1,5 @@
 use super::{verifier::VerifierImpl, CertificationCrypto};
+use crate::certification::CertifierType;
 use ic_consensus_utils::{
     active_high_threshold_transcript, aggregate, membership::Membership, registry_version_at_height,
 };
@@ -11,14 +12,13 @@ use ic_interfaces::{
 use ic_interfaces_state_manager::StateManager;
 use ic_logger::{debug, error, trace, ReplicaLogger};
 use ic_metrics::{buckets::decimal_buckets, MetricsRegistry};
-use ic_replicated_state::ReplicatedState;
 use ic_types::consensus::{Committee, HasCommittee, HasHeight};
 use ic_types::{
     artifact::{
         CertificationMessageAttribute, CertificationMessageFilter, CertificationMessageId,
-        Priority, PriorityFn,
+        ExecCertificationMessageAttribute, ExecCertificationMessageId, Priority, PriorityFn,
     },
-    artifact_kind::CertificationArtifact,
+    artifact_kind::{CertificationArtifact, ExecCertificationArtifact},
     consensus::certification::{
         Certification, CertificationContent, CertificationMessage, CertificationShare,
     },
@@ -36,11 +36,12 @@ pub const MINIMUM_CHAIN_LENGTH: u64 = 100;
 
 /// The Certification component, processing the changes on the certification
 /// pool and submitting the corresponding change sets.
-pub struct CertifierImpl {
+pub struct CertifierImpl<T> {
+    _certifier_type: CertifierType,
     replica_config: ReplicaConfig,
     membership: Arc<Membership>,
     crypto: Arc<dyn CertificationCrypto>,
-    state_manager: Arc<dyn StateManager<State = ReplicatedState>>,
+    state_manager: Arc<dyn StateManager<State = T>>,
     consensus_pool_cache: Arc<dyn ConsensusPoolCache>,
     metrics: CertifierMetrics,
     /// The highest height that has been purged. Used to avoid redudant purging.
@@ -50,8 +51,8 @@ pub struct CertifierImpl {
 
 /// The Certification component, processing the changes on the certification
 /// pool and submitting the corresponding change sets.
-pub struct CertifierGossipImpl {
-    state_manager: Arc<dyn StateManager<State = ReplicatedState>>,
+pub struct CertifierGossipImpl<T> {
+    state_manager: Arc<dyn StateManager<State = T>>,
     consensus_pool_cache: Arc<dyn ConsensusPoolCache>,
 }
 
@@ -62,8 +63,8 @@ struct CertifierMetrics {
     execution_time: Histogram,
 }
 
-impl<Pool: CertificationPool> PriorityFnAndFilterProducer<CertificationArtifact, Pool>
-    for CertifierGossipImpl
+impl<Pool: CertificationPool, T> PriorityFnAndFilterProducer<CertificationArtifact, Pool>
+    for CertifierGossipImpl<T>
 {
     // The priority function requires just the height of the artifact to decide if
     // it should be fetched or not: if we already have a full certification at
@@ -116,18 +117,78 @@ impl<Pool: CertificationPool> PriorityFnAndFilterProducer<CertificationArtifact,
     }
 }
 
+impl<Pool: CertificationPool, T> PriorityFnAndFilterProducer<ExecCertificationArtifact, Pool>
+    for CertifierGossipImpl<T>
+{
+    // The priority function requires just the height of the artifact to decide if
+    // it should be fetched or not: if we already have a full certification at
+    // that height or this height is below the CUP height, we're not interested in
+    // any new artifacts at that height. If it is above the CUP height and we do not
+    // have a full certification at that height, we're interested in all artifacts.
+    fn get_priority_function(
+        &self,
+        certification_pool: &Pool,
+    ) -> PriorityFn<ExecCertificationMessageId, ExecCertificationMessageAttribute> {
+        let certified_heights = certification_pool.certified_heights();
+        let cup_height = self.consensus_pool_cache.catch_up_package().height();
+        Box::new(move |_, attribute| {
+            let height = match attribute {
+                ExecCertificationMessageAttribute(
+                    CertificationMessageAttribute::Certification(height),
+                ) => height,
+                ExecCertificationMessageAttribute(
+                    CertificationMessageAttribute::CertificationShare(height),
+                ) => height,
+            };
+            // We drop all artifacts below the CUP height or those for which we have a full
+            // certification already.
+            if *height < cup_height || certified_heights.contains(height) {
+                Priority::Drop
+            } else {
+                Priority::Fetch
+            }
+        })
+    }
+
+    /// Return the height above which we want a certification. Note that
+    /// this is not always equal the upper bound of what we have in the
+    /// certification pool for the following reasons:
+    /// 1. The pool is not persisted. We will not have any certification
+    ///    in there.
+    /// 2. We might have certification in the pool that is not yet
+    ///    verified or delivered to the state_manager.
+    fn get_filter(&self) -> CertificationMessageFilter {
+        let to_certify = self.state_manager.list_state_hashes_to_certify();
+        let filter_height = if to_certify.is_empty() {
+            self.state_manager.latest_state_height()
+        } else {
+            let h = to_certify[0].0;
+            assert!(
+                h > Height::from(0),
+                "State height to certify must be 1 or above"
+            );
+            h.decrement()
+        };
+        CertificationMessageFilter {
+            height: filter_height,
+        }
+    }
+}
+
 /// Return both Certifier and CertifierGossip components.
-pub fn setup(
+pub fn setup<T>(
+    certifier_type: CertifierType,
     replica_config: ReplicaConfig,
     membership: Arc<Membership>,
     crypto: Arc<dyn CertificationCrypto>,
-    state_manager: Arc<dyn StateManager<State = ReplicatedState>>,
+    state_manager: Arc<dyn StateManager<State = T>>,
     consensus_pool_cache: Arc<dyn ConsensusPoolCache>,
     metrics_registry: MetricsRegistry,
     log: ReplicaLogger,
-) -> (CertifierImpl, CertifierGossipImpl) {
+) -> (CertifierImpl<T>, CertifierGossipImpl<T>) {
     (
         CertifierImpl::new(
+            certifier_type,
             replica_config,
             membership,
             crypto,
@@ -171,7 +232,7 @@ pub fn setup(
 ///
 /// 5. Whenever the catch-up package height increases, remove all certification
 /// artifacts below this height.
-impl<T: CertificationPool> ChangeSetProducer<T> for CertifierImpl {
+impl<T: CertificationPool, U> ChangeSetProducer<T> for CertifierImpl<U> {
     type ChangeSet = ChangeSet;
 
     /// Should be called on every change of the certification pool and timeouts.
@@ -289,18 +350,24 @@ impl<T: CertificationPool> ChangeSetProducer<T> for CertifierImpl {
     }
 }
 
-impl CertifierImpl {
+impl<T> CertifierImpl<T> {
     /// Construct a new CertifierImpl.
     pub fn new(
+        certifier_type: CertifierType,
         replica_config: ReplicaConfig,
         membership: Arc<Membership>,
         crypto: Arc<dyn CertificationCrypto>,
-        state_manager: Arc<dyn StateManager<State = ReplicatedState>>,
+        state_manager: Arc<dyn StateManager<State = T>>,
         consensus_pool_cache: Arc<dyn ConsensusPoolCache>,
         metrics_registry: MetricsRegistry,
         log: ReplicaLogger,
     ) -> Self {
+        let metric_name_prefix = match certifier_type {
+            CertifierType::CONSENSUS => "",
+            CertifierType::EXECUTION => "execution_",
+        };
         Self {
+            _certifier_type: certifier_type,
             replica_config,
             membership,
             crypto,
@@ -308,21 +375,25 @@ impl CertifierImpl {
             consensus_pool_cache,
             metrics: CertifierMetrics {
                 shares_created: metrics_registry.int_counter(
-                    "certification_shares_created",
-                    "Amount of certification shares created.",
+                    format!("{}certification_shares_created", metric_name_prefix).to_string(),
+                    "Amount of certification shares created.".to_string(),
                 ),
                 certifications_aggregated: metrics_registry.int_counter(
-                    "certification_certifications_aggregated",
-                    "Amount of full certifications created.",
+                    format!(
+                        "{}certification_certifications_aggregated",
+                        metric_name_prefix
+                    ),
+                    "Amount of full certifications created.".to_string(),
                 ),
                 execution_time: metrics_registry.histogram(
-                    "certification_execution_time",
-                    "Certifier execution time in seconds.",
+                    format!("{}certification_execution_time", metric_name_prefix).to_string(),
+                    "Certifier execution time in seconds.".to_string(),
                     decimal_buckets(-3, 1),
                 ),
                 last_certified_height: metrics_registry.int_gauge(
-                    "certification_last_certified_height",
-                    "The last certified height.",
+                    format!("{}certification_last_certified_height", metric_name_prefix)
+                        .to_string(),
+                    "The last certified height.".to_string(),
                 ),
             },
             log,
@@ -739,6 +810,7 @@ mod tests {
                     metrics_registry.clone(),
                 );
                 let (certifier, certifier_gossip) = setup(
+                    CertificationType::CONSENSUS,
                     replica_config,
                     membership,
                     crypto,
