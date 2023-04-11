@@ -129,7 +129,6 @@ fi
 DEPLOY_LOCAL=${DEPLOY_LOCAL=:-false}
 DEPLOY_LOCAL_ARGS=""
 if [[ ${DEPLOY_LOCAL} ]]; then
-    deployment=localhost
     DEPLOY_LOCAL_ARGS=" --deploy-local "
 fi
 

@@ -7,11 +7,11 @@
 #
 # Before running
 # 0. You can compile the replica locally
-# 1. make sure you have testnet/env/localhost defined.
+# 1. make sure you have testnet/env/${DEPLOYMENT} defined.
 # 2. icos_deploy.sh has been modified to copy canisters and binaries from local
 # compilation
-# 3. Can ansible to the localhost using the usename logged in
-#    3.1. you should be able to ssh $USER@localhost
+# 3. Can ansible to the ${DEPLOYMENT} using the usename logged in
+#    3.1. you should be able to ssh $USER@${DEPLOYMENT}
 #    3.2. sudo ls   # without using a password
 #
 # 4. You are able to run VMs on you local machine.
@@ -47,6 +47,9 @@ if [ $retval -ne 0 ]; then
        return -1
 fi
 
+DEPLOYMENT="${1:-"frz13"}"
+echo $DEPLOYMENT
+
 #icprep is build 20.02 container 22.04 has a different openssl version
 #export LD_LIBRARY_PATH=$HOME/wrk/apk/openssl1_1_1/openssl-1.1.1o
 
@@ -54,8 +57,8 @@ cd "$(dirname "$0")"
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 GIT_REVISION=$(git log --format=format:%H  --max-count=1)
 ${REPO_ROOT}/gitlab-ci/container/build-ic.sh -i -b -c -d -s
-sudo rm -rf  /var/local/ic/disk/localhost/${GIT_REVISION}
-sudo mkdir -p /var/local/ic/disk/localhost/${GIT_REVISION}
-sudo cp /wrk/apk/ic/artifacts/icos/disk-img.tar.zst /var/local/ic/disk/localhost/${GIT_REVISION}/
-sudo cp /wrk/apk/ic/artifacts/icos/SHA256SUMS /var/local/ic/disk/localhost/${GIT_REVISION}/
-bash -x ${REPO_ROOT}/testnet/tools/icos_deploy.sh localhost --deploy-local --git-revision ${GIT_REVISION}
+sudo rm -rf  /var/local/ic/disk/${DEPLOYMENT}/${GIT_REVISION}
+sudo mkdir -p /var/local/ic/disk/${DEPLOYMENT}/${GIT_REVISION}
+cp /wrk/apk/ic/artifacts/icos/disk-img.tar.zst  /var/local/ic/disk/${DEPLOYMENT}/${GIT_REVISION}/
+cp /wrk/apk/ic/artifacts/icos/SHA256SUMS /var/local/ic/disk/${DEPLOYMENT}/${GIT_REVISION}/
+bash -x ${REPO_ROOT}/testnet/tools/icos_deploy.sh ${DEPLOYMENT} --deploy-local --git-revision ${GIT_REVISION}
