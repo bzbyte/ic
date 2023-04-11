@@ -51,7 +51,7 @@ data_centers:
       ipv6_subnet: "/64"
   bobcat:
     vars:
-      ipv6_prefix: "fe80:fb01:400:43"
+      ipv6_prefix: "2a00:fb01:400:43"
       ipv6_subnet: "/64"
 
 
