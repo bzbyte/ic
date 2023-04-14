@@ -7,6 +7,7 @@ package(default_visibility = ["//rs/replica:__subpackages__"])
 DEPENDENCIES = [
     "//rs/async_utils",
     "//rs/certification",
+    "//rs/consensus",
     "//rs/config",
     "//rs/crypto/tls_interfaces",
     "//rs/crypto/tree_hash",

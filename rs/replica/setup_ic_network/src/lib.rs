@@ -309,6 +309,7 @@ fn setup_artifact_manager(
         eth_payload_builder,
         eth_message_routing,
         eth_state_manager,
+        eth_state_reader: _,
     }: EthExecution = eth_execution;
     {
         // Create the consensus client.
