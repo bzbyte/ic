@@ -58,7 +58,7 @@ pub struct EthExecutionClient {
     runtime: Runtime,
     log: ReplicaLogger,
     certification_pending: Arc<Mutex<CertificationMap>>,
-    state: Mutex<EthExecutionState>,
+    state: Arc<Mutex<EthExecutionState>>,
 }
 
 impl EthExecutionClient {
@@ -82,6 +82,7 @@ impl EthExecutionClient {
             },
             timestamp: block.timestamp,
         });
+        let state = Arc::from(state);
         Self {
             rpc_client,
             runtime,
@@ -252,7 +253,7 @@ impl EthMessageRouting for EthExecutionClient {
 }
 
 impl StateReader for EthExecutionClient {
-    type State = EthExecutionClient;
+    type State = CryptoHashOfPartialState;
 
     fn get_state_at(
         &self,
@@ -293,7 +294,16 @@ impl StateReader for EthExecutionClient {
         MixedHashTree,
         ic_types::consensus::certification::Certification,
     )> {
-        todo!()
+        let cert_pending = self.certification_pending.lock().unwrap();
+        let (_hc, (_he, hash, certification)) = cert_pending
+            .iter()
+            .rev()
+            .find(|(_hc, (_he, _hash, certification))| certification.is_some())?;
+        Some((
+            Arc::from(hash.clone()),
+            MixedHashTree::Empty,
+            certification.as_ref().unwrap().clone(),
+        ))
     }
 }
 
@@ -381,7 +391,9 @@ pub struct EthExecution {
     /// message routing for the execution engine
     pub eth_message_routing: Arc<dyn EthMessageRouting>,
     /// state manager for the certifier to interact with
-    pub eth_state_manager: Arc<dyn StateManager<State = EthExecutionClient>>,
+    pub eth_state_manager: Arc<dyn StateManager<State = CryptoHashOfPartialState>>,
+    /// state reader for the http layer to interact with
+    pub eth_state_reader: Arc<dyn StateReader<State = CryptoHashOfPartialState>>,
 }
 
 impl EthExecution {
@@ -389,12 +401,14 @@ impl EthExecution {
     fn new(
         eth_payload_builder: Arc<dyn EthPayloadBuilder>,
         eth_message_routing: Arc<dyn EthMessageRouting>,
-        eth_state_manager: Arc<dyn StateManager<State = EthExecutionClient>>,
+        eth_state_manager: Arc<dyn StateManager<State = CryptoHashOfPartialState>>,
+        eth_state_reader: Arc<dyn StateReader<State = CryptoHashOfPartialState>>,
     ) -> Self {
         Self {
             eth_payload_builder,
             eth_message_routing,
             eth_state_manager,
+            eth_state_reader,
         }
     }
 }
@@ -402,5 +416,5 @@ impl EthExecution {
 /// Builds a minimal ethereum stack to be used with certified consensus
 pub fn build_eth(log: ReplicaLogger) -> EthExecution {
     let eth = Arc::new(EthExecutionClient::new("http://localhost:8551", log));
-    EthExecution::new(eth.clone(), eth.clone(), eth)
+    EthExecution::new(eth.clone(), eth.clone(), eth.clone(), eth)
 }

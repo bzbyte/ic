@@ -285,6 +285,7 @@ fn main() -> io::Result<()> {
         consensus_pool_cache,
         ingress_message_filter,
         _xnet_endpoint,
+        eth_state_reader,
     ) = ic_replica::setup_p2p::construct_ic_stack(
         logger.clone(),
         rt_main.handle().clone(),
@@ -312,6 +313,7 @@ fn main() -> io::Result<()> {
         ingress_ingestion_service,
         async_query_handler,
         state_manager,
+        eth_state_reader,
         registry,
         Arc::clone(&crypto) as Arc<dyn TlsHandshake + Send + Sync>,
         Arc::clone(&crypto) as Arc<dyn IngressSigVerifier + Send + Sync>,

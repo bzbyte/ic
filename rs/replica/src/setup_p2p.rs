@@ -14,6 +14,7 @@ use ic_interfaces::{
 use ic_interfaces_certified_stream_store::CertifiedStreamStore;
 use ic_interfaces_p2p::IngressIngestionService;
 use ic_interfaces_registry::{LocalStoreCertifiedTimeReader, RegistryClient};
+use ic_interfaces_state_manager::StateReader;
 use ic_logger::{info, ReplicaLogger};
 use ic_messaging::MessageRoutingImpl;
 use ic_p2p::P2PThreadJoiner;
@@ -23,10 +24,11 @@ use ic_replica_setup_ic_network::{
 };
 use ic_replicated_state::ReplicatedState;
 use ic_state_manager::{state_sync::StateSync, StateManagerImpl};
-use ic_types::{consensus::catchup::CUPWithOriginalProtobuf, NodeId, SubnetId};
+use ic_types::{
+    consensus::catchup::CUPWithOriginalProtobuf, CryptoHashOfPartialState, NodeId, SubnetId,
+};
 use ic_xnet_endpoint::{XNetEndpoint, XNetEndpointConfig};
 use ic_xnet_payload_builder::XNetPayloadBuilderImpl;
-
 use std::sync::Arc;
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -57,6 +59,7 @@ pub fn construct_ic_stack(
     Arc<dyn ConsensusPoolCache>,
     IngressFilterService,
     XNetEndpoint,
+    Arc<dyn StateReader<State = CryptoHashOfPartialState>>,
 )> {
     let artifact_pool_config = ArtifactPoolConfig::from(config.artifact_pool);
 
@@ -242,6 +245,7 @@ pub fn construct_ic_stack(
     let state_sync = StateSync::new(state_manager.clone(), replica_logger.clone());
 
     let eth_execution = ic_consensus::consensus::eth::build_eth(replica_logger.clone());
+    let eth_state_reader = eth_execution.eth_state_reader.clone();
 
     let (ingress_ingestion_service, p2p_runner) = create_networking_stack(
         metrics_registry,
@@ -285,5 +289,6 @@ pub fn construct_ic_stack(
         artifact_pools.consensus_pool_cache,
         execution_services.ingress_filter,
         xnet_endpoint,
+        eth_state_reader,
     ))
 }
