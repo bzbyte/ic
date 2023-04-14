@@ -382,6 +382,8 @@ pub struct EthExecution {
     pub eth_message_routing: Arc<dyn EthMessageRouting>,
     /// state manager for the certifier to interact with
     pub eth_state_manager: Arc<dyn StateManager<State = EthExecutionClient>>,
+    /// state reader for the http layer to interact with
+    pub eth_state_reader: Arc<dyn StateReader<State = EthExecutionClient>>,
 }
 
 impl EthExecution {
@@ -390,11 +392,13 @@ impl EthExecution {
         eth_payload_builder: Arc<dyn EthPayloadBuilder>,
         eth_message_routing: Arc<dyn EthMessageRouting>,
         eth_state_manager: Arc<dyn StateManager<State = EthExecutionClient>>,
+        eth_state_reader: Arc<dyn StateReader<State = EthExecutionClient>>,
     ) -> Self {
         Self {
             eth_payload_builder,
             eth_message_routing,
             eth_state_manager,
+            eth_state_reader,
         }
     }
 }
@@ -402,5 +406,5 @@ impl EthExecution {
 /// Builds a minimal ethereum stack to be used with certified consensus
 pub fn build_eth(log: ReplicaLogger) -> EthExecution {
     let eth = Arc::new(EthExecutionClient::new("http://localhost:8551", log));
-    EthExecution::new(eth.clone(), eth.clone(), eth)
+    EthExecution::new(eth.clone(), eth.clone(), eth.clone(), eth)
 }

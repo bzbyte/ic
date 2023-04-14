@@ -2,6 +2,7 @@ use ic_btc_adapter_client::{setup_bitcoin_adapter_clients, BitcoinAdapterClients
 use ic_btc_consensus::BitcoinPayloadBuilder;
 use ic_config::{artifact_pool::ArtifactPoolConfig, subnet_config::SubnetConfig, Config};
 use ic_consensus::certification::VerifierImpl;
+use ic_consensus::consensus::eth::EthExecutionClient;
 use ic_crypto::CryptoComponent;
 use ic_cycles_account_manager::CyclesAccountManager;
 use ic_execution_environment::ExecutionServices;
@@ -14,6 +15,7 @@ use ic_interfaces::{
 use ic_interfaces_certified_stream_store::CertifiedStreamStore;
 use ic_interfaces_p2p::IngressIngestionService;
 use ic_interfaces_registry::{LocalStoreCertifiedTimeReader, RegistryClient};
+use ic_interfaces_state_manager::StateReader;
 use ic_logger::{info, ReplicaLogger};
 use ic_messaging::MessageRoutingImpl;
 use ic_p2p::P2PThreadJoiner;
@@ -26,7 +28,6 @@ use ic_state_manager::{state_sync::StateSync, StateManagerImpl};
 use ic_types::{consensus::catchup::CUPWithOriginalProtobuf, NodeId, SubnetId};
 use ic_xnet_endpoint::{XNetEndpoint, XNetEndpointConfig};
 use ic_xnet_payload_builder::XNetPayloadBuilderImpl;
-
 use std::sync::Arc;
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -57,6 +58,7 @@ pub fn construct_ic_stack(
     Arc<dyn ConsensusPoolCache>,
     IngressFilterService,
     XNetEndpoint,
+    Arc<dyn StateReader<State = EthExecutionClient>>,
 )> {
     let artifact_pool_config = ArtifactPoolConfig::from(config.artifact_pool);
 
@@ -242,6 +244,7 @@ pub fn construct_ic_stack(
     let state_sync = StateSync::new(state_manager.clone(), replica_logger.clone());
 
     let eth_execution = ic_consensus::consensus::eth::build_eth(replica_logger.clone());
+    let eth_state_reader = eth_execution.eth_state_reader.clone();
 
     let (ingress_ingestion_service, p2p_runner) = create_networking_stack(
         metrics_registry,
@@ -285,5 +288,6 @@ pub fn construct_ic_stack(
         artifact_pools.consensus_pool_cache,
         execution_services.ingress_filter,
         xnet_endpoint,
+        eth_state_reader,
     ))
 }

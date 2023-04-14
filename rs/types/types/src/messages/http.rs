@@ -677,6 +677,19 @@ pub struct HttpStatusResponse {
     pub certified_height: Option<Height>,
 }
 
+/// The response to `/api/v2/execstatus`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct HttpExecStatusResponse {
+    pub ic_api_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub impl_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub impl_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub certified_height: Option<Height>,
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
