@@ -3,6 +3,7 @@
 //! HTTP requests that the Internet Computer is prepared to handle.
 
 use super::Blob;
+use crate::consensus::certification::Certification;
 use crate::{
     crypto::SignedBytesWithoutDomainSeparator,
     messages::{
@@ -19,7 +20,6 @@ use maplit::btreemap;
 use proptest_derive::Arbitrary;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, convert::TryFrom, error::Error, fmt};
-
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum CallOrQuery {
     Call,
@@ -688,6 +688,8 @@ pub struct HttpExecStatusResponse {
     pub impl_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub certified_height: Option<Height>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub certificate: Option<Certification>,
 }
 
 #[cfg(test)]

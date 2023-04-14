@@ -2,7 +2,6 @@ use ic_btc_adapter_client::{setup_bitcoin_adapter_clients, BitcoinAdapterClients
 use ic_btc_consensus::BitcoinPayloadBuilder;
 use ic_config::{artifact_pool::ArtifactPoolConfig, subnet_config::SubnetConfig, Config};
 use ic_consensus::certification::VerifierImpl;
-use ic_consensus::consensus::eth::EthExecutionClient;
 use ic_crypto::CryptoComponent;
 use ic_cycles_account_manager::CyclesAccountManager;
 use ic_execution_environment::ExecutionServices;
@@ -25,7 +24,9 @@ use ic_replica_setup_ic_network::{
 };
 use ic_replicated_state::ReplicatedState;
 use ic_state_manager::{state_sync::StateSync, StateManagerImpl};
-use ic_types::{consensus::catchup::CUPWithOriginalProtobuf, NodeId, SubnetId};
+use ic_types::{
+    consensus::catchup::CUPWithOriginalProtobuf, CryptoHashOfPartialState, NodeId, SubnetId,
+};
 use ic_xnet_endpoint::{XNetEndpoint, XNetEndpointConfig};
 use ic_xnet_payload_builder::XNetPayloadBuilderImpl;
 use std::sync::Arc;
@@ -58,7 +59,7 @@ pub fn construct_ic_stack(
     Arc<dyn ConsensusPoolCache>,
     IngressFilterService,
     XNetEndpoint,
-    Arc<dyn StateReader<State = EthExecutionClient>>,
+    Arc<dyn StateReader<State = CryptoHashOfPartialState>>,
 )> {
     let artifact_pool_config = ArtifactPoolConfig::from(config.artifact_pool);
 

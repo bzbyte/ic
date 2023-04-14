@@ -49,7 +49,6 @@ use hyper_tls::HttpsConnector;
 use ic_async_utils::{receive_body, start_tcp_listener};
 use ic_certification::validate_subnet_delegation_certificate;
 use ic_config::http_handler::Config;
-use ic_consensus::consensus::eth::EthExecutionClient;
 use ic_crypto_tls_interfaces::TlsHandshake;
 use ic_crypto_tree_hash::{lookup_path, LabeledTree, Path};
 use ic_crypto_utils_threshold_sig_der::parse_threshold_sig_key_from_der;
@@ -69,6 +68,7 @@ use ic_registry_client_helpers::{
 };
 use ic_registry_subnet_type::SubnetType;
 use ic_replicated_state::ReplicatedState;
+use ic_types::CryptoHashOfPartialState;
 use ic_types::{
     malicious_flags::MaliciousFlags,
     messages::{
@@ -275,7 +275,7 @@ pub fn start_server(
     ingress_sender: IngressIngestionService,
     query_execution_service: QueryExecutionService,
     state_reader: Arc<dyn StateReader<State = ReplicatedState>>,
-    exec_state_reader: Arc<dyn StateReader<State = EthExecutionClient>>,
+    exec_state_reader: Arc<dyn StateReader<State = CryptoHashOfPartialState>>,
     registry_client: Arc<dyn RegistryClient>,
     tls_handshake: Arc<dyn TlsHandshake + Send + Sync>,
     ingress_verifier: Arc<dyn IngressSigVerifier + Send + Sync>,

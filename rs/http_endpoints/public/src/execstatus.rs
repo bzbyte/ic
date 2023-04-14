@@ -1,17 +1,13 @@
 //! Module that deals with requests to /api/v2/execstatus
-use crate::{common, state_reader_executor::StateReaderExecutor, EndpointService};
-use crossbeam::atomic::AtomicCell;
+use crate::{common, EndpointService};
 use http::Request;
 use hyper::{Body, Response};
-use ic_consensus::consensus::eth::EthExecutionClient;
-use ic_crypto_utils_threshold_sig_der::public_key_to_der;
-use ic_interfaces_registry::RegistryClient;
+use ic_crypto_tree_hash::LabeledTree;
 use ic_interfaces_state_manager::StateReader;
-use ic_logger::{warn, ReplicaLogger};
+use ic_logger::ReplicaLogger;
+use ic_types::CryptoHashOfPartialState;
 use ic_types::{
-    messages::{Blob, HttpExecStatusResponse, ReplicaHealthStatus},
-    replica_version::REPLICA_BINARY_HASH,
-    ReplicaVersion, SubnetId,
+    messages::HttpExecStatusResponse, replica_version::REPLICA_BINARY_HASH, ReplicaVersion,
 };
 use std::future::Future;
 use std::pin::Pin;
@@ -26,19 +22,16 @@ const MAX_STATUS_CONCURRENT_REQUESTS: usize = 100;
 const IC_API_VERSION: &str = "0.18.0";
 #[derive(Clone)]
 pub(crate) struct ExecStatusService {
-    log: ReplicaLogger,
-    state_read_executor: Arc<dyn StateReader<State = EthExecutionClient>>,
+    _log: ReplicaLogger,
+    state_reader: Arc<dyn StateReader<State = CryptoHashOfPartialState>>,
 }
 
 impl ExecStatusService {
     pub(crate) fn new_service(
-        log: ReplicaLogger,
-        state_read_executor: Arc<dyn StateReader<State = EthExecutionClient>>,
+        _log: ReplicaLogger,
+        state_reader: Arc<dyn StateReader<State = CryptoHashOfPartialState>>,
     ) -> EndpointService {
-        let base_service = Self {
-            log,
-            state_read_executor,
-        };
+        let base_service = Self { _log, state_reader };
         BoxCloneService::new(
             ServiceBuilder::new()
                 .layer(GlobalConcurrencyLimitLayer::new(
@@ -60,7 +53,10 @@ impl Service<Request<Body>> for ExecStatusService {
     }
 
     fn call(&mut self, _unused: Request<Body>) -> Self::Future {
-        let log = self.log.clone();
+        let certificate = self
+            .state_reader
+            .read_certified_state(&LabeledTree::Leaf(()))
+            .map(|(_, _, certificate)| certificate);
         let response = HttpExecStatusResponse {
             ic_api_version: IC_API_VERSION.to_string(),
             // For test networks, and networks that we still reset
@@ -71,7 +67,8 @@ impl Service<Request<Body>> for ExecStatusService {
             // USE WITH EXTREME CAUTION.
             impl_version: Some(ReplicaVersion::default().to_string()),
             impl_hash: REPLICA_BINARY_HASH.get().map(|s| s.to_string()),
-            certified_height: Some(self.state_read_executor.latest_certified_height()),
+            certified_height: Some(self.state_reader.latest_certified_height()),
+            certificate,
         };
         Box::pin(async move { Ok(common::cbor_response(&response).0) })
     }
