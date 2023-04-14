@@ -234,7 +234,6 @@ fn main() -> io::Result<()> {
             crypto,
             cup,
         )?;
-
     info!(logger, "Constructed IC stack");
 
     // TODO(NET-1366) - remove this flag once confident that starting gRPC is stable
@@ -251,7 +250,6 @@ fn main() -> io::Result<()> {
                 .onchain_observability_uds_metrics_path,
         );
     }
-
     std::thread::sleep(Duration::from_millis(5000));
 
     if config.malicious_behaviour.maliciously_seg_fault() {

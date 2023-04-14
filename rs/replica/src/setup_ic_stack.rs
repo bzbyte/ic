@@ -61,7 +61,7 @@ pub fn construct_ic_stack(
     Vec<Box<dyn JoinGuard>>,
     // TODO: remove this return value since it is used only in tests
     IngressIngestionService,
-    XNetEndpoint,
+    XNetEndpoint
 )> {
     // ---------- ARTIFACT POOLS DEPS FOLLOW ----------
     create_consensus_pool_dir(&config);
@@ -246,6 +246,7 @@ pub fn construct_ic_stack(
         LocalStoreImpl::new(config.registry_client.local_store.clone()),
     );
     let eth_execution = ic_consensus::consensus::eth::build_eth(log.clone());
+    let eth_state_reader = eth_execution.eth_state_reader.clone();
 
     let (ingress_ingestion_service, p2p_runner) = create_networking_stack(
         metrics_registry,
@@ -286,6 +287,7 @@ pub fn construct_ic_stack(
         ingress_ingestion_service.clone(),
         execution_services.async_query_handler,
         Arc::clone(&state_manager) as Arc<_>,
+        eth_state_reader,
         registry,
         Arc::clone(&crypto) as Arc<_>,
         Arc::clone(&crypto) as Arc<_>,
@@ -303,6 +305,6 @@ pub fn construct_ic_stack(
         execution_services.sync_query_handler,
         p2p_runner,
         ingress_ingestion_service,
-        xnet_endpoint,
+        xnet_endpoint
     ))
 }

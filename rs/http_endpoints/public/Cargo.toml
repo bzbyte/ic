@@ -16,6 +16,7 @@ hyper = { version = "0.14.18", features = ["full"] }
 hyper-tls = "0.5.0"
 ic-async-utils = { path = "../../async_utils" }
 ic-certification = { path = "../../certification" }
+ic-consensus = { path = "../../consensus" }
 ic-config = { path = "../../config" }
 ic-crypto-tls-interfaces = { path = "../../crypto/tls_interfaces" }
 ic-crypto-tree-hash = { path = "../../crypto/tree_hash" }

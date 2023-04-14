@@ -3,6 +3,7 @@
 //! HTTP requests that the Internet Computer is prepared to handle.
 
 use super::Blob;
+use crate::consensus::certification::Certification;
 use crate::{
     crypto::SignedBytesWithoutDomainSeparator,
     messages::{
@@ -683,4 +684,19 @@ pub struct HttpStatusResponse {
     pub replica_health_status: Option<ReplicaHealthStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub certified_height: Option<Height>,
+}
+
+/// The response to `/api/v2/execstatus`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct HttpExecStatusResponse {
+    pub ic_api_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub impl_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub impl_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub certified_height: Option<Height>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub certificate: Option<Certification>,
 }
