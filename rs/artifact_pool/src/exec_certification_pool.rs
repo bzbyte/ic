@@ -5,7 +5,6 @@ use ic_config::artifact_pool::{ArtifactPoolConfig, PersistentPoolBackend};
 use ic_interfaces::{
     artifact_pool::{MutablePool, UnvalidatedArtifact, ValidatedPoolReader},
     certification::{CertificationPool, ChangeAction, ChangeSet},
-    consensus_pool::HeightIndexedPool,
     time_source::TimeSource,
 };
 use ic_logger::ReplicaLogger;

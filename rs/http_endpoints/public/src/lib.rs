@@ -10,6 +10,7 @@ mod call;
 mod catch_up_package;
 mod common;
 mod dashboard;
+mod execstatus;
 mod health_status_refresher;
 mod metrics;
 mod pprof;
@@ -28,6 +29,7 @@ use crate::{
         map_box_error_to_response,
     },
     dashboard::DashboardService,
+    execstatus::ExecStatusService,
     health_status_refresher::HealthStatusRefreshLayer,
     metrics::{LABEL_REQUEST_TYPE, LABEL_STATUS, REQUESTS_LABEL_NAMES, REQUESTS_NUM_LABELS},
     query::QueryService,
@@ -66,6 +68,7 @@ use ic_registry_client_helpers::{
 };
 use ic_registry_subnet_type::SubnetType;
 use ic_replicated_state::ReplicatedState;
+use ic_types::CryptoHashOfPartialState;
 use ic_types::{
     malicious_flags::MaliciousFlags,
     messages::{
@@ -116,6 +119,7 @@ struct HttpHandler {
     catchup_service: EndpointService,
     dashboard_service: EndpointService,
     status_service: EndpointService,
+    exec_status_service: EndpointService,
     read_state_service: EndpointService,
     health_status_refresher: HealthStatusRefreshLayer,
 }
@@ -226,6 +230,7 @@ pub fn start_server(
     ingress_sender: IngressIngestionService,
     query_execution_service: QueryExecutionService,
     state_reader: Arc<dyn StateReader<State = ReplicatedState>>,
+    exec_state_reader: Arc<dyn StateReader<State = CryptoHashOfPartialState>>,
     registry_client: Arc<dyn RegistryClient>,
     tls_handshake: Arc<dyn TlsHandshake + Send + Sync>,
     ingress_verifier: Arc<dyn IngressSigVerifier + Send + Sync>,
@@ -296,6 +301,7 @@ pub fn start_server(
         Arc::clone(&health_status),
         state_reader_executor.clone(),
     );
+    let exec_status_service = ExecStatusService::new_service(log.clone(), exec_state_reader);
     let dashboard_service =
         DashboardService::new_service(config.clone(), subnet_type, state_reader_executor.clone());
     let catchup_service = CatchUpPackageService::new_service(
@@ -329,6 +335,7 @@ pub fn start_server(
         call_service,
         query_service,
         status_service,
+        exec_status_service,
         catchup_service,
         dashboard_service,
         read_state_service,
@@ -559,6 +566,7 @@ async fn make_router(
     let call_service = http_handler.call_service.clone();
     let query_service = http_handler.query_service.clone();
     let status_service = http_handler.status_service.clone();
+    let exec_status_service = http_handler.exec_status_service.clone();
     let catch_up_package_service = http_handler.catchup_service.clone();
     let dashboard_service = http_handler.dashboard_service.clone();
     let read_state_service = http_handler.read_state_service.clone();
@@ -645,6 +653,10 @@ async fn make_router(
             "/api/v2/status" => {
                 timer.set_label(LABEL_REQUEST_TYPE, ApiReqType::Status.into());
                 status_service
+            }
+            "/api/v2/cert_status" => {
+                timer.set_label(LABEL_REQUEST_TYPE, ApiReqType::ExecStatus.into());
+                exec_status_service
             }
             "/" | "/_/" => {
                 timer.set_label(LABEL_REQUEST_TYPE, ApiReqType::RedirectToDashboard.into());
