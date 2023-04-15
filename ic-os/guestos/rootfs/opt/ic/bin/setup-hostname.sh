@@ -30,3 +30,4 @@ echo "${hostname}" >/run/ic-node/etc/hostname
 mount --bind /run/ic-node/etc/hostname /etc/hostname
 restorecon -v /etc/hostname
 hostname "${hostname}"
+hostnamectl hostnmae "${hostname}"
