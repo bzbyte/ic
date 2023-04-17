@@ -35,7 +35,7 @@ pub const JWT_SECRET: [u8; 32] = [0u8; 32];
 /// Builds the Eth payload to be included in the block proposal.
 pub trait EthPayloadBuilder: Send + Sync {
     /// Get a payload from the Ethereum block builder currently the execution engine i.e. No MEV
-    fn get_payload(&self) -> Result<Option<EthPayload>, String>;
+    fn get_payload(&self, height: Height) -> Result<Option<EthPayload>, String>;
 }
 
 /// Delivers the finalized transactions to Eth execution layer.
@@ -132,11 +132,9 @@ impl EthExecutionClient {
         }
     }
 
-    #[allow(unused)]
     fn update_head(&self, head_block_hash: ExecutionBlockHash, timestamp: u64) {
         let mut state = self.state.lock().unwrap();
         state.fork_choice_state.head_block_hash = head_block_hash;
-        state.fork_choice_state.safe_block_hash = head_block_hash;
         state.timestamp = timestamp;
     }
 
@@ -146,15 +144,13 @@ impl EthExecutionClient {
 
     fn update_finalized_block(&self, finalized_block_hash: ExecutionBlockHash, timestamp: u64) {
         let mut state = self.state.lock().unwrap();
-        state.fork_choice_state.head_block_hash = finalized_block_hash;
         state.fork_choice_state.safe_block_hash = finalized_block_hash;
         state.fork_choice_state.finalized_block_hash = finalized_block_hash;
-        state.timestamp = timestamp;
     }
 }
 
 impl EthPayloadBuilder for EthExecutionClient {
-    fn get_payload(&self) -> Result<Option<EthPayload>, String> {
+    fn get_payload(&self, height: Height) -> Result<Option<EthPayload>, String> {
         self.runtime.block_on(async {
             let execution_state = self.get_state();
             let attr = Some(PayloadAttributes::V1(PayloadAttributesV1 {
@@ -162,16 +158,22 @@ impl EthPayloadBuilder for EthExecutionClient {
                 prev_randao: Hash256::zero(),
                 suggested_fee_recipient: Address::repeat_byte(0),
             }));
+            println!(
+                "ENTER finalized block get_payload: {:?}, Height {height:?}",
+                execution_state.fork_choice_state.head_block_hash,
+            );
             let fork_choice_result = self
                 .rpc_client
                 .forkchoice_updated_v2(execution_state.fork_choice_state, attr)
                 .await
                 .unwrap();
-            debug!(
-                self.log,
-                "EthStubImpl::get_payload(): fork choice: {:?}", fork_choice_result
+            println!(
+                // self.log,
+                "EthStubImpl::get_payload(): fork choice: {:?}",
+                fork_choice_result
             );
 
+            std::thread::sleep(std::time::Duration::from_secs(2));
             let json_payload = self
                 .rpc_client
                 .get_json_payload_v1::<MainnetEthSpec>(fork_choice_result.payload_id.unwrap())
@@ -182,21 +184,32 @@ impl EthPayloadBuilder for EthExecutionClient {
                 "EthStubImpl::get_payload(): eth_payload: {:?}", json_payload
             );
 
-            let timestamp = if let GetJsonPayloadResponse::V1(
+            let (head_block_hash, timestamp) = if let GetJsonPayloadResponse::V1(
                 JsonExecutionPayloadV1 {
-                    block_hash: _head_block_hash,
+                    block_hash: head_block_hash,
                     timestamp,
                     ..
                 },
                 _x,
             ) = &json_payload
             {
-                *timestamp
+                (*head_block_hash, *timestamp)
             } else {
                 panic!("Only Mainnet Spec supported");
             };
 
+            println!(
+                "EXIT newblock get_payload {:?} Height {height:?}",
+                head_block_hash
+            );
+
             let execution_payload = bincode::serialize(&json_payload).unwrap();
+            let new_payload = self
+                .rpc_client
+                .new_payload_v1(json_payload.into())
+                .await
+                .unwrap();
+            self.update_head(head_block_hash, timestamp);
             Ok(Some(EthPayload {
                 execution_payload,
                 timestamp,
@@ -247,6 +260,10 @@ impl EthMessageRouting for EthExecutionClient {
                     CryptoHashOfPartialState::from(CryptoHash(state_root)),
                 );
                 self.update_finalized_block(finalized_block_hash, timestamp);
+                println!(
+                    "deliver_batch: {finalized_block_hash:?}, Height {:?}",
+                    Height::from(entry.height)
+                );
             }
         })
     }
