@@ -7,8 +7,8 @@ use bzb_execution_layer::engine_api::{
     http::HttpJsonRpc,
     json_structures::{ExecutionBlockHash, JsonExecutionPayloadV1},
     sensitive_url::SensitiveUrl,
-    Address, BlockByNumberQuery, ForkchoiceState, GetJsonPayloadResponse, PayloadAttributes,
-    PayloadAttributesV1, LATEST_TAG,
+    Address, BlockByNumberQuery, Error, ForkchoiceState, ForkchoiceUpdatedResponse,
+    GetJsonPayloadResponse, PayloadAttributes, PayloadAttributesV1, LATEST_TAG,
 };
 use ic_crypto_tree_hash::{LabeledTree, MixedHashTree};
 use ic_interfaces_state_manager::{StateManager, StateReader};
@@ -49,7 +49,10 @@ type CertificationMap = BTreeMap<Height, (Height, CryptoHashOfPartialState, Opti
 #[derive(Clone, Copy)]
 struct EthExecutionState {
     fork_choice_state: ForkchoiceState,
-    timestamp: u64,
+    head_timestamp: u64,
+    head_height: Height,
+    finalized_timestamp: u64,
+    finalized_height: Height,
 }
 
 /// JSON RPC client implementation of the engine API.
@@ -80,7 +83,10 @@ impl EthExecutionClient {
                 safe_block_hash: block.block_hash,
                 finalized_block_hash: ExecutionBlockHash::zero(),
             },
-            timestamp: block.timestamp,
+            head_timestamp: block.timestamp,
+            head_height: Height::from(block.block_number),
+            finalized_timestamp: 0,
+            finalized_height: Height::from(0),
         });
         let state = Arc::from(state);
         Self {
@@ -120,60 +126,119 @@ impl EthExecutionClient {
                 );
             }
             if cert_entry.is_none() {
-                info!(
-                    self.log,
+                println!(
                     "Eth Certification {:?} consensus height {}, Exec height {}",
-                    certification,
-                    consensus_height,
-                    execution_height
+                    certification, consensus_height, execution_height
                 );
                 cert_entry.replace(certification);
             }
         }
     }
 
-    fn update_head(&self, head_block_hash: ExecutionBlockHash, timestamp: u64) {
-        let mut state = self.state.lock().unwrap();
-        state.fork_choice_state.head_block_hash = head_block_hash;
-        state.timestamp = timestamp;
+    /* State update functions */
+    async fn update_head(
+        &self,
+        head_block_hash: ExecutionBlockHash,
+        head_timestamp: u64,
+        head_height: Height,
+    ) {
+        let mut execution_state = self.state.lock().unwrap();
+        update_head_helper(
+            &mut execution_state,
+            head_block_hash,
+            head_timestamp,
+            head_height,
+        );
+        self.forkchoice_updated_v2(&execution_state)
+            .await
+            .expect("Consensus layer should be in sync with execution layer");
     }
 
+    async fn update_finalized_block(
+        &self,
+        finalized_block_hash: ExecutionBlockHash,
+        finalized_timestamp: u64,
+        finalized_height: Height,
+    ) {
+        let mut execution_state = self.state.lock().unwrap();
+        execution_state.fork_choice_state.safe_block_hash = finalized_block_hash;
+        execution_state.fork_choice_state.finalized_block_hash = finalized_block_hash;
+        execution_state.finalized_height = finalized_height;
+        execution_state.finalized_timestamp = finalized_timestamp;
+
+        /* the finalization is for a past propoasl.
+         * 1. The past proposal was our proposal then our optmistic execution need not be reset.
+         * Check if the finalized block is on the canonical chain
+         * The only way to do this currently is attempt a fork choice update
+         *
+         * */
+        if execution_state.finalized_height < execution_state.head_height
+            && self.forkchoice_updated_v2(&execution_state).await.is_ok()
+        {
+            return;
+        }
+
+        println!("Fork not on canonical chain head need to reset");
+        update_head_helper(
+            &mut execution_state,
+            finalized_block_hash,
+            finalized_timestamp,
+            finalized_height,
+        );
+        self.forkchoice_updated_v2(&execution_state)
+            .await
+            .expect("Consensus layer should be in sync with execution layer");
+    }
+
+    async fn forkchoice_updated_v2(
+        &self,
+        execution_state: &EthExecutionState,
+    ) -> Result<ForkchoiceUpdatedResponse, Error> {
+        let attr = Some(PayloadAttributes::V1(PayloadAttributesV1 {
+            timestamp: execution_state.head_timestamp + 1,
+            prev_randao: Hash256::zero(),
+            suggested_fee_recipient: Address::repeat_byte(0),
+        }));
+        println!(
+            "ENTER finalized block get_payload: {:?}",
+            execution_state.fork_choice_state.head_block_hash,
+        );
+        let fork_choice_result = self
+            .rpc_client
+            .forkchoice_updated_v2(execution_state.fork_choice_state, attr)
+            .await;
+        println!(
+            // self.log,
+            "EthStubImpl::get_payload(): fork choice: {:?}",
+            fork_choice_result
+        );
+        fork_choice_result
+    }
+
+    // State is always kept consistent under a lock. Making a clone gives out a conistent state to
+    // build upon
     fn get_state(&self) -> EthExecutionState {
         self.state.lock().unwrap().deref().clone()
     }
+}
 
-    fn update_finalized_block(&self, finalized_block_hash: ExecutionBlockHash, timestamp: u64) {
-        let mut state = self.state.lock().unwrap();
-        state.fork_choice_state.safe_block_hash = finalized_block_hash;
-        state.fork_choice_state.finalized_block_hash = finalized_block_hash;
-    }
+fn update_head_helper(
+    state: &mut EthExecutionState,
+    head_block_hash: ExecutionBlockHash,
+    head_timestamp: u64,
+    head_height: Height,
+) {
+    state.fork_choice_state.head_block_hash = head_block_hash;
+    state.head_timestamp = head_timestamp;
+    state.head_height = head_height;
 }
 
 impl EthPayloadBuilder for EthExecutionClient {
     fn get_payload(&self, height: Height) -> Result<Option<EthPayload>, String> {
         self.runtime.block_on(async {
             let execution_state = self.get_state();
-            let attr = Some(PayloadAttributes::V1(PayloadAttributesV1 {
-                timestamp: execution_state.timestamp + 1,
-                prev_randao: Hash256::zero(),
-                suggested_fee_recipient: Address::repeat_byte(0),
-            }));
-            println!(
-                "ENTER finalized block get_payload: {:?}, Height {height:?}",
-                execution_state.fork_choice_state.head_block_hash,
-            );
-            let fork_choice_result = self
-                .rpc_client
-                .forkchoice_updated_v2(execution_state.fork_choice_state, attr)
-                .await
-                .unwrap();
-            println!(
-                // self.log,
-                "EthStubImpl::get_payload(): fork choice: {:?}",
-                fork_choice_result
-            );
-
-            std::thread::sleep(std::time::Duration::from_secs(2));
+            let fork_choice_result = self.forkchoice_updated_v2(&execution_state).await.unwrap();
+            //std::thread::sleep(std::time::Duration::from_secs(2));
             let json_payload = self
                 .rpc_client
                 .get_json_payload_v1::<MainnetEthSpec>(fork_choice_result.payload_id.unwrap())
@@ -184,16 +249,17 @@ impl EthPayloadBuilder for EthExecutionClient {
                 "EthStubImpl::get_payload(): eth_payload: {:?}", json_payload
             );
 
-            let (head_block_hash, timestamp) = if let GetJsonPayloadResponse::V1(
+            let (head_block_hash, timestamp, block_number) = if let GetJsonPayloadResponse::V1(
                 JsonExecutionPayloadV1 {
                     block_hash: head_block_hash,
                     timestamp,
+                    block_number,
                     ..
                 },
                 _x,
             ) = &json_payload
             {
-                (*head_block_hash, *timestamp)
+                (*head_block_hash, *timestamp, *block_number)
             } else {
                 panic!("Only Mainnet Spec supported");
             };
@@ -204,12 +270,12 @@ impl EthPayloadBuilder for EthExecutionClient {
             );
 
             let execution_payload = bincode::serialize(&json_payload).unwrap();
-            let new_payload = self
+            let payload_status = self
                 .rpc_client
                 .new_payload_v1(json_payload.into())
                 .await
                 .unwrap();
-            self.update_head(head_block_hash, timestamp);
+            self.update_head(head_block_hash, timestamp, Height::from(block_number));
             Ok(Some(EthPayload {
                 execution_payload,
                 timestamp,
@@ -259,7 +325,12 @@ impl EthMessageRouting for EthExecutionClient {
                     Height::from(eth_block_number),
                     CryptoHashOfPartialState::from(CryptoHash(state_root)),
                 );
-                self.update_finalized_block(finalized_block_hash, timestamp);
+                self.update_finalized_block(
+                    finalized_block_hash,
+                    timestamp,
+                    Height::from(eth_block_number),
+                )
+                .await;
                 println!(
                     "deliver_batch: {finalized_block_hash:?}, Height {:?}",
                     Height::from(entry.height)
