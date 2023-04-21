@@ -98,18 +98,84 @@ impl EthExecutionClient {
         }
     }
 
-    fn add_finalized_height(
-        &self,
-        consensus_height: Height,
-        execution_height: Height,
-        state_root: CryptoHashOfPartialState,
-    ) {
+    /* once we get finalization for a eth block we have to queue it for certification.
+     * Finalization is expected to grow strictly monotonically and thus never expected to
+     * diverge. This is the "fast finality" guaratee to top-level clients and we should
+     * maintian that invariant here. So.
+     *
+     * 1. We only accept finalizations for the next expected finalization height.
+     * 2. finalization request less than the expected height are either "repeats" of the same
+     *    blocks or divergences. In both cases we don't accept the finalization
+     *
+     *  Only exception to the above rule is the zeroth/genesis block.
+     *  */
+    async fn process_finalization(&self, execution_delivery: EthExecutionDelivery) {
+        let mut execution_state = self.state.lock().unwrap();
         let mut certification_map = self.certification_pending.lock().unwrap();
+
+        let json_payload: GetJsonPayloadResponse<MainnetEthSpec> =
+            bincode::deserialize(&execution_delivery.payload.execution_payload).unwrap();
+        /* TODO: simplify this wrapping */
+        let (state_root, execution_height, finalized_block_hash, timestamp) = match &json_payload {
+            GetJsonPayloadResponse::V1(
+                JsonExecutionPayloadV1 {
+                    state_root,
+                    block_number,
+                    block_hash: finalized_block_hash,
+                    timestamp,
+                    ..
+                },
+                _x,
+            ) => (
+                state_root.as_bytes().to_vec(),
+                Height::from(*block_number),
+                *finalized_block_hash,
+                *timestamp,
+            ),
+            _ => panic!("Only V1 structures supported"),
+        };
+        let consensus_height = Height::from(execution_delivery.height);
+        let expected_finalization_height = Height::from(
+            execution_state
+                .finalized_height
+                .get()
+                .checked_add(1)
+                .unwrap(),
+        );
+        if execution_height != expected_finalization_height {
+            println!(
+                "deliver_batch: REJECT transition {:?} got {:?}",
+                expected_finalization_height, execution_height
+            );
+            return;
+        }
+        println!(
+            "deliver_batch: ACCEPT transition {:?} got {:?}",
+            expected_finalization_height, execution_height
+        );
+
+        /* execute the finalized block */
+        let _new_payload = self
+            .rpc_client
+            .new_payload_v1(json_payload.into())
+            .await
+            .unwrap();
+
+        /* queue the state root for certification */
         let _ = certification_map.entry(consensus_height).or_insert((
             execution_height,
-            state_root,
+            CryptoHashOfPartialState::from(CryptoHash(state_root)),
             None,
         ));
+
+        /* update the finalized block - reorg the head if needed */
+        self.update_finalized_block(
+            &mut execution_state,
+            finalized_block_hash,
+            timestamp,
+            execution_height,
+        )
+        .await;
     }
 
     fn add_certification(&self, certification: Certification) {
@@ -156,11 +222,11 @@ impl EthExecutionClient {
 
     async fn update_finalized_block(
         &self,
+        execution_state: &mut EthExecutionState,
         finalized_block_hash: ExecutionBlockHash,
         finalized_timestamp: u64,
         finalized_height: Height,
     ) {
-        let mut execution_state = self.state.lock().unwrap();
         execution_state.fork_choice_state.safe_block_hash = finalized_block_hash;
         execution_state.fork_choice_state.finalized_block_hash = finalized_block_hash;
         execution_state.finalized_height = finalized_height;
@@ -180,7 +246,7 @@ impl EthExecutionClient {
 
         println!("Fork not on canonical chain head need to reset");
         update_head_helper(
-            &mut execution_state,
+            execution_state,
             finalized_block_hash,
             finalized_timestamp,
             finalized_height,
@@ -270,12 +336,13 @@ impl EthPayloadBuilder for EthExecutionClient {
             );
 
             let execution_payload = bincode::serialize(&json_payload).unwrap();
-            let payload_status = self
+            let _payload_status = self
                 .rpc_client
                 .new_payload_v1(json_payload.into())
                 .await
                 .unwrap();
-            self.update_head(head_block_hash, timestamp, Height::from(block_number));
+            self.update_head(head_block_hash, timestamp, Height::from(block_number))
+                .await;
             Ok(Some(EthPayload {
                 execution_payload,
                 timestamp,
@@ -288,53 +355,7 @@ impl EthMessageRouting for EthExecutionClient {
     fn deliver_batch(&self, batch: Vec<EthExecutionDelivery>) {
         self.runtime.block_on(async {
             for entry in batch {
-                let json_payload: GetJsonPayloadResponse<MainnetEthSpec> =
-                    bincode::deserialize(&entry.payload.execution_payload).unwrap();
-
-                let (state_root, eth_block_number, finalized_block_hash, timestamp) =
-                    match &json_payload {
-                        GetJsonPayloadResponse::V1(
-                            JsonExecutionPayloadV1 {
-                                state_root,
-                                block_number,
-                                block_hash: finalized_block_hash,
-                                timestamp,
-                                ..
-                            },
-                            _x,
-                        ) => (
-                            state_root.as_bytes().to_vec(),
-                            *block_number,
-                            *finalized_block_hash,
-                            *timestamp,
-                        ),
-                        _ => panic!("Only V1 structures supported"),
-                    };
-                let new_payload = self
-                    .rpc_client
-                    .new_payload_v1(json_payload.into())
-                    .await
-                    .unwrap();
-                debug!(
-                    self.log,
-                    "EthStubImpl::deliver_batch(): new_payload: {:?}", new_payload
-                );
-
-                self.add_finalized_height(
-                    Height::from(entry.height),
-                    Height::from(eth_block_number),
-                    CryptoHashOfPartialState::from(CryptoHash(state_root)),
-                );
-                self.update_finalized_block(
-                    finalized_block_hash,
-                    timestamp,
-                    Height::from(eth_block_number),
-                )
-                .await;
-                println!(
-                    "deliver_batch: {finalized_block_hash:?}, Height {:?}",
-                    Height::from(entry.height)
-                );
+                self.process_finalization(entry).await;
             }
         })
     }
