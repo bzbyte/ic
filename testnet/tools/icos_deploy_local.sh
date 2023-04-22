@@ -59,6 +59,6 @@ GIT_REVISION=$(git log --format=format:%H  --max-count=1)
 ${REPO_ROOT}/gitlab-ci/container/build-ic.sh -i -b -c -d -s
 sudo rm -rf  /var/local/ic/disk/${DEPLOYMENT}/${GIT_REVISION}
 sudo mkdir -p /var/local/ic/disk/${DEPLOYMENT}/${GIT_REVISION}
-cp /wrk/apk/ic/artifacts/icos/disk-img.tar.zst  /var/local/ic/disk/${DEPLOYMENT}/${GIT_REVISION}/
-cp /wrk/apk/ic/artifacts/icos/SHA256SUMS /var/local/ic/disk/${DEPLOYMENT}/${GIT_REVISION}/
+sudo cp /wrk/apk/ic/artifacts/icos/disk-img.tar.zst  /var/local/ic/disk/${DEPLOYMENT}/${GIT_REVISION}/
+sudo cp /wrk/apk/ic/artifacts/icos/SHA256SUMS /var/local/ic/disk/${DEPLOYMENT}/${GIT_REVISION}/
 bash -x ${REPO_ROOT}/testnet/tools/icos_deploy.sh ${DEPLOYMENT} --deploy-local --git-revision ${GIT_REVISION}
