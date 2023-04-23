@@ -70,23 +70,42 @@ impl EthExecutionClient {
         let rpc_url = SensitiveUrl::parse(url).unwrap();
         let rpc_client = HttpJsonRpc::new_with_auth(rpc_url, rpc_auth, None).unwrap();
         let runtime = tokio::runtime::Runtime::new().unwrap();
-        let block = runtime.block_on(async {
-            rpc_client
+        let (head_block, safe_block, finalized_block) = runtime.block_on(async {
+            let head_block = rpc_client
                 .get_block_by_number(BlockByNumberQuery::Tag(LATEST_TAG))
                 .await
                 .unwrap()
-                .unwrap()
+                .unwrap();
+            let finalized_block = rpc_client
+                .get_block_by_number(BlockByNumberQuery::Tag("finalized"))
+                .await
+                .unwrap();
+            let safe_block = rpc_client
+                .get_block_by_number(BlockByNumberQuery::Tag("safe"))
+                .await
+                .unwrap();
+            (head_block, safe_block, finalized_block)
         });
+
+        println!("HEAD {head_block:?}");
+        println!("FINAL {finalized_block:?}");
+        println!("SAFE {safe_block:?}");
+
         let state = Mutex::new(EthExecutionState {
             fork_choice_state: ForkchoiceState {
-                head_block_hash: block.block_hash,
-                safe_block_hash: block.block_hash,
-                finalized_block_hash: ExecutionBlockHash::zero(),
+                head_block_hash: head_block.block_hash,
+                safe_block_hash: safe_block.map_or(ExecutionBlockHash::zero(), |safe_block| {
+                    safe_block.block_hash
+                }),
+                finalized_block_hash: finalized_block
+                    .map_or(ExecutionBlockHash::zero(), |finalized_block| {
+                        finalized_block.block_hash
+                    }),
             },
-            head_timestamp: block.timestamp,
-            head_height: Height::from(block.block_number),
-            finalized_timestamp: 0,
-            finalized_height: Height::from(0),
+            head_timestamp: head_block.timestamp,
+            head_height: Height::from(head_block.block_number),
+            finalized_timestamp: finalized_block.map_or(0, |block| block.timestamp),
+            finalized_height: Height::from(finalized_block.map_or(0, |block| block.block_number)),
         });
         let state = Arc::from(state);
         Self {
