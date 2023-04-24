@@ -10,6 +10,7 @@ use bzb_execution_layer::engine_api::{
     Address, BlockByNumberQuery, Error, ForkchoiceState, ForkchoiceUpdatedResponse,
     GetJsonPayloadResponse, PayloadAttributes, PayloadAttributesV1, LATEST_TAG,
 };
+use core::fmt::Debug;
 use ic_crypto_tree_hash::{LabeledTree, MixedHashTree};
 use ic_interfaces_state_manager::{StateManager, StateReader};
 use ic_logger::{debug, info, ReplicaLogger};
@@ -22,7 +23,6 @@ use ic_types::{
 
 use std::{
     collections::BTreeMap,
-    ops::Deref,
     sync::{Arc, Mutex},
 };
 use tokio::runtime::Runtime;
@@ -42,6 +42,8 @@ pub trait EthPayloadBuilder: Send + Sync {
 pub trait EthMessageRouting: Send + Sync {
     /// Deliver a batch of transactions to the ETH execution layer
     fn deliver_batch(&self, batch: Vec<EthExecutionDelivery>);
+    /// Deliver early notarization hint for optimistic block building
+    fn notarization_hint(&self, hint: EthExecutionDelivery);
 }
 
 type CertificationMap = BTreeMap<Height, (Height, CryptoHashOfPartialState, Option<Certification>)>;
@@ -62,6 +64,20 @@ pub struct EthExecutionClient {
     log: ReplicaLogger,
     certification_pending: Arc<Mutex<CertificationMap>>,
     state: Arc<Mutex<EthExecutionState>>,
+}
+
+enum BlockProcessing {
+    Notarization,
+    Finalization,
+}
+
+impl Debug for BlockProcessing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Notarization => write!(f, "Notarization"),
+            Self::Finalization => write!(f, "Finalization"),
+        }
+    }
 }
 
 impl EthExecutionClient {
@@ -128,14 +144,18 @@ impl EthExecutionClient {
      *
      *  Only exception to the above rule is the zeroth/genesis block.
      *  */
-    async fn process_finalization(&self, execution_delivery: EthExecutionDelivery) {
+    async fn process_block(
+        &self,
+        execution_delivery: EthExecutionDelivery,
+        processing: BlockProcessing,
+    ) {
         let mut execution_state = self.state.lock().unwrap();
         let mut certification_map = self.certification_pending.lock().unwrap();
 
         let json_payload: GetJsonPayloadResponse<MainnetEthSpec> =
             bincode::deserialize(&execution_delivery.payload.execution_payload).unwrap();
         /* TODO: simplify this wrapping */
-        let (state_root, execution_height, finalized_block_hash, timestamp) = match &json_payload {
+        let (state_root, execution_height, block_hash, timestamp) = match &json_payload {
             GetJsonPayloadResponse::V1(
                 JsonExecutionPayloadV1 {
                     state_root,
@@ -154,24 +174,20 @@ impl EthExecutionClient {
             _ => panic!("Only V1 structures supported"),
         };
         let consensus_height = Height::from(execution_delivery.height);
-        let expected_finalization_height = Height::from(
-            execution_state
-                .finalized_height
-                .get()
-                .checked_add(1)
-                .unwrap(),
-        );
-        if execution_height != expected_finalization_height {
+
+        let curr_height = match &processing {
+            BlockProcessing::Finalization => execution_state.finalized_height.get(),
+            BlockProcessing::Notarization => execution_state.head_height.get(),
+        };
+
+        let expected_height = Height::from(curr_height.checked_add(1).unwrap());
+        if execution_height != expected_height {
             println!(
-                "deliver_batch: REJECT transition {:?} got {:?}",
-                expected_finalization_height, execution_height
+                "process_block: {processing:?} REJECT transition {expected_height:?} got {execution_height:?}"
             );
             return;
         }
-        println!(
-            "deliver_batch: ACCEPT transition {:?} got {:?}",
-            expected_finalization_height, execution_height
-        );
+        println!("process_block:  {processing:?} ACCEPT transition {expected_height:?} got {execution_height:?}");
 
         /* execute the finalized block */
         let _new_payload = self
@@ -180,21 +196,34 @@ impl EthExecutionClient {
             .await
             .unwrap();
 
-        /* queue the state root for certification */
-        let _ = certification_map.entry(consensus_height).or_insert((
-            execution_height,
-            CryptoHashOfPartialState::from(CryptoHash(state_root)),
-            None,
-        ));
+        match &processing {
+            BlockProcessing::Finalization => {
+                /* queue the state root for certification */
+                let _ = certification_map.entry(consensus_height).or_insert((
+                    execution_height,
+                    CryptoHashOfPartialState::from(CryptoHash(state_root)),
+                    None,
+                ));
 
-        /* update the finalized block - reorg the head if needed */
-        self.update_finalized_block(
-            &mut execution_state,
-            finalized_block_hash,
-            timestamp,
-            execution_height,
-        )
-        .await;
+                /* update the finalized block - reorg the head if needed */
+                self.update_finalized_block(
+                    &mut execution_state,
+                    block_hash,
+                    timestamp,
+                    execution_height,
+                )
+                .await;
+            }
+            BlockProcessing::Notarization => {
+                self.update_head_block(
+                    &mut execution_state,
+                    block_hash,
+                    timestamp,
+                    execution_height,
+                )
+                .await;
+            }
+        }
     }
 
     fn add_certification(&self, certification: Certification) {
@@ -221,19 +250,16 @@ impl EthExecutionClient {
     }
 
     /* State update functions */
-    async fn update_head(
+    async fn update_head_block(
         &self,
+        execution_state: &mut EthExecutionState,
         head_block_hash: ExecutionBlockHash,
         head_timestamp: u64,
         head_height: Height,
     ) {
-        let mut execution_state = self.state.lock().unwrap();
-        update_head_helper(
-            &mut execution_state,
-            head_block_hash,
-            head_timestamp,
-            head_height,
-        );
+        execution_state.fork_choice_state.head_block_hash = head_block_hash;
+        execution_state.head_timestamp = head_timestamp;
+        execution_state.head_height = head_height;
         self.forkchoice_updated_v2(&execution_state)
             .await
             .expect("Consensus layer should be in sync with execution layer");
@@ -264,15 +290,13 @@ impl EthExecutionClient {
         }
 
         println!("Fork not on canonical chain head need to reset");
-        update_head_helper(
+        self.update_head_block(
             execution_state,
             finalized_block_hash,
             finalized_timestamp,
             finalized_height,
-        );
-        self.forkchoice_updated_v2(&execution_state)
-            .await
-            .expect("Consensus layer should be in sync with execution layer");
+        )
+        .await
     }
 
     async fn forkchoice_updated_v2(
@@ -299,31 +323,13 @@ impl EthExecutionClient {
         );
         fork_choice_result
     }
-
-    // State is always kept consistent under a lock. Making a clone gives out a conistent state to
-    // build upon
-    fn get_state(&self) -> EthExecutionState {
-        self.state.lock().unwrap().deref().clone()
-    }
-}
-
-fn update_head_helper(
-    state: &mut EthExecutionState,
-    head_block_hash: ExecutionBlockHash,
-    head_timestamp: u64,
-    head_height: Height,
-) {
-    state.fork_choice_state.head_block_hash = head_block_hash;
-    state.head_timestamp = head_timestamp;
-    state.head_height = head_height;
 }
 
 impl EthPayloadBuilder for EthExecutionClient {
     fn get_payload(&self, height: Height) -> Result<Option<EthPayload>, String> {
         self.runtime.block_on(async {
-            let execution_state = self.get_state();
+            let mut execution_state = self.state.lock().unwrap();
             let fork_choice_result = self.forkchoice_updated_v2(&execution_state).await.unwrap();
-            //std::thread::sleep(std::time::Duration::from_secs(2));
             let json_payload = self
                 .rpc_client
                 .get_json_payload_v1::<MainnetEthSpec>(fork_choice_result.payload_id.unwrap())
@@ -360,8 +366,13 @@ impl EthPayloadBuilder for EthExecutionClient {
                 .new_payload_v1(json_payload.into())
                 .await
                 .unwrap();
-            self.update_head(head_block_hash, timestamp, Height::from(block_number))
-                .await;
+            self.update_head_block(
+                &mut execution_state,
+                head_block_hash,
+                timestamp,
+                Height::from(block_number),
+            )
+            .await;
             Ok(Some(EthPayload {
                 execution_payload,
                 timestamp,
@@ -374,8 +385,16 @@ impl EthMessageRouting for EthExecutionClient {
     fn deliver_batch(&self, batch: Vec<EthExecutionDelivery>) {
         self.runtime.block_on(async {
             for entry in batch {
-                self.process_finalization(entry).await;
+                self.process_block(entry, BlockProcessing::Finalization)
+                    .await;
             }
+        })
+    }
+
+    fn notarization_hint(&self, hint: EthExecutionDelivery) {
+        self.runtime.block_on(async {
+            self.process_block(hint, BlockProcessing::Notarization)
+                .await;
         })
     }
 }

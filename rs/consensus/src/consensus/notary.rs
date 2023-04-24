@@ -24,6 +24,7 @@
 //!   latest round, which would break security if it has already finality-signed
 //!   for that round.
 use crate::consensus::{
+    eth::EthMessageRouting,
     membership::{Membership, MembershipError},
     metrics::NotaryMetrics,
     pool_reader::PoolReader,
@@ -36,7 +37,7 @@ use ic_interfaces_state_manager::StateManager;
 use ic_logger::{error, trace, warn, ReplicaLogger};
 use ic_metrics::MetricsRegistry;
 use ic_replicated_state::ReplicatedState;
-use ic_types::replica_config::ReplicaConfig;
+use ic_types::{eth::EthExecutionDelivery, replica_config::ReplicaConfig};
 use std::sync::Arc;
 
 pub struct Notary {
@@ -44,6 +45,7 @@ pub struct Notary {
     replica_config: ReplicaConfig,
     membership: Arc<Membership>,
     crypto: Arc<dyn ConsensusCrypto>,
+    eth: Option<Arc<dyn EthMessageRouting>>,
     state_manager: Arc<dyn StateManager<State = ReplicatedState>>,
     log: ReplicaLogger,
     metrics: NotaryMetrics,
@@ -57,6 +59,7 @@ impl Notary {
         crypto: Arc<dyn ConsensusCrypto>,
         state_manager: Arc<dyn StateManager<State = ReplicatedState>>,
         metrics_registry: MetricsRegistry,
+        eth: Option<Arc<dyn EthMessageRouting>>,
         log: ReplicaLogger,
     ) -> Notary {
         Notary {
@@ -66,7 +69,26 @@ impl Notary {
             crypto,
             state_manager,
             log,
+            eth,
             metrics: NotaryMetrics::new(metrics_registry),
+        }
+    }
+
+    fn deliver_notarization_hint(&self, proposal: &BlockProposal) {
+        let block: &Block = proposal.as_ref();
+        let mut eth_payload = None;
+        if !block.payload.is_summary() {
+            /* the payload clone can be removed by using a ARC */
+            let data_payload = BlockPayload::from(block.payload.clone()).into_data();
+            eth_payload = data_payload.eth.clone();
+        }
+        if let Some(eth) = &self.eth {
+            if let Some(payload) = eth_payload {
+                eth.notarization_hint(EthExecutionDelivery {
+                    height: block.height.get(),
+                    payload,
+                });
+            }
         }
     }
 
@@ -89,6 +111,7 @@ impl Notary {
                         if let Some(s) = self.notarize_block(pool, block) {
                             self.metrics.report_notarization(block, elapsed);
                             notarization_shares.push(s);
+                            self.deliver_notarization_hint(&proposal);
                         }
                     }
                 }
