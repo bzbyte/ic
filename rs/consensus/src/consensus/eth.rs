@@ -82,30 +82,33 @@ impl Debug for BlockProcessing {
 
 impl EthExecutionClient {
     fn new(url: &str, log: ReplicaLogger) -> Self {
-        let rpc_auth = Auth::new(JwtKey::from_slice(&JWT_SECRET).unwrap(), None, None);
-        let rpc_url = SensitiveUrl::parse(url).unwrap();
-        let rpc_client = HttpJsonRpc::new_with_auth(rpc_url, rpc_auth, None).unwrap();
-        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let jwt = JwtKey::from_slice(&JWT_SECRET).expect("Valid jwt secret");
+        let rpc_auth = Auth::new(jwt, None, None);
+        let rpc_url = SensitiveUrl::parse(url).expect("expect a correctly formatted rpc url");
+        let rpc_client = HttpJsonRpc::new_with_auth(rpc_url, rpc_auth, None)
+            .expect("Connection to execution client needed to continue");
+        let runtime =
+            tokio::runtime::Runtime::new().expect("Runtime needed for issuing execution layer API");
         let (head_block, safe_block, finalized_block) = runtime.block_on(async {
             let head_block = rpc_client
                 .get_block_by_number(BlockByNumberQuery::Tag(LATEST_TAG))
                 .await
-                .unwrap()
-                .unwrap();
+                .expect("Head block must be known")
+                .expect("Head block must be known");
             let finalized_block = rpc_client
                 .get_block_by_number(BlockByNumberQuery::Tag("finalized"))
                 .await
-                .unwrap();
+                .expect("RPC to query finalized block must succeed");
             let safe_block = rpc_client
                 .get_block_by_number(BlockByNumberQuery::Tag("safe"))
                 .await
-                .unwrap();
+                .expect("RPC to query safe block must succeed");
             (head_block, safe_block, finalized_block)
         });
 
-        println!("HEAD {head_block:?}");
-        println!("FINAL {finalized_block:?}");
-        println!("SAFE {safe_block:?}");
+        info!(log, "HEAD {head_block:?}");
+        info!(log, "FINAL {finalized_block:?}");
+        info!(log, "SAFE {safe_block:?}");
 
         let state = Mutex::new(EthExecutionState {
             fork_choice_state: ForkchoiceState {
@@ -148,12 +151,16 @@ impl EthExecutionClient {
         &self,
         execution_delivery: EthExecutionDelivery,
         processing: BlockProcessing,
-    ) {
-        let mut execution_state = self.state.lock().unwrap();
-        let mut certification_map = self.certification_pending.lock().unwrap();
+    ) -> Result<(), String> {
+        let mut execution_state = self.state.lock().expect("Lock acquisition failed");
+        let mut certification_map = self
+            .certification_pending
+            .lock()
+            .expect("Lock acquisition failed");
 
         let json_payload: GetJsonPayloadResponse<MainnetEthSpec> =
-            bincode::deserialize(&execution_delivery.payload.execution_payload).unwrap();
+            bincode::deserialize(&execution_delivery.payload.execution_payload)
+                .map_err(|e| e.to_string())?;
         /* TODO: simplify this wrapping */
         let (state_root, execution_height, block_hash, timestamp) = match &json_payload {
             GetJsonPayloadResponse::V1(
@@ -180,21 +187,26 @@ impl EthExecutionClient {
             BlockProcessing::Notarization => execution_state.head_height.get(),
         };
 
-        let expected_height = Height::from(curr_height.checked_add(1).unwrap());
+        let expected_height = Height::from(
+            curr_height
+                .checked_add(1)
+                .expect("Height must be u64 bound"),
+        );
         if execution_height != expected_height {
-            println!(
-                "process_block: {processing:?} REJECT transition {expected_height:?} got {execution_height:?}"
+            info!(
+                self.log,
+                 "process_block: {processing:?} REJECT transition {expected_height:?} got {execution_height:?}"
             );
-            return;
+            return Err("Height out of bound".into());
         }
-        println!("process_block:  {processing:?} ACCEPT transition {expected_height:?} got {execution_height:?}");
+        info!(self.log, "process_block:  {processing:?} ACCEPT transition {expected_height:?} got {execution_height:?}");
 
         /* execute the finalized block */
         let _new_payload = self
             .rpc_client
             .new_payload_v1(json_payload.into())
             .await
-            .unwrap();
+            .map_err(|e| format!("{e:?}"))?;
 
         match &processing {
             BlockProcessing::Finalization => {
@@ -223,11 +235,12 @@ impl EthExecutionClient {
                 )
                 .await;
             }
-        }
+        };
+        Ok(())
     }
 
     fn add_certification(&self, certification: Certification) {
-        let mut certification_map = self.certification_pending.lock().unwrap();
+        let mut certification_map = self.certification_pending.lock().expect("Lock acquisition");
         let consensus_height = certification.height;
         // Accept the first certificate if the hash matches
         if let Some((execution_height, state_root, cert_entry)) =
@@ -240,9 +253,12 @@ impl EthExecutionClient {
                 );
             }
             if cert_entry.is_none() {
-                println!(
+                debug!(
+                    self.log,
                     "Eth Certification {:?} consensus height {}, Exec height {}",
-                    certification, consensus_height, execution_height
+                    certification,
+                    consensus_height,
+                    execution_height
                 );
                 cert_entry.replace(certification);
             }
@@ -289,7 +305,7 @@ impl EthExecutionClient {
             return;
         }
 
-        println!("Fork not on canonical chain head need to reset");
+        info!(self.log, "Fork not on canonical chain head need to reset");
         self.update_head_block(
             execution_state,
             finalized_block_hash,
@@ -308,7 +324,8 @@ impl EthExecutionClient {
             prev_randao: Hash256::zero(),
             suggested_fee_recipient: Address::repeat_byte(0),
         }));
-        println!(
+        info!(
+            self.log,
             "ENTER finalized block get_payload: {:?}",
             execution_state.fork_choice_state.head_block_hash,
         );
@@ -316,10 +333,9 @@ impl EthExecutionClient {
             .rpc_client
             .forkchoice_updated_v2(execution_state.fork_choice_state, attr)
             .await;
-        println!(
-            // self.log,
-            "EthStubImpl::get_payload(): fork choice: {:?}",
-            fork_choice_result
+        info!(
+            self.log,
+            "EthStubImpl::get_payload(): fork choice: {:?}", fork_choice_result
         );
         fork_choice_result
     }
@@ -328,14 +344,20 @@ impl EthExecutionClient {
 impl EthPayloadBuilder for EthExecutionClient {
     fn get_payload(&self, height: Height) -> Result<Option<EthPayload>, String> {
         self.runtime.block_on(async {
-            let mut execution_state = self.state.lock().unwrap();
-            let fork_choice_result = self.forkchoice_updated_v2(&execution_state).await.unwrap();
+            let mut execution_state = self.state.lock().expect("Execution lock acquisition");
+            let fork_choice_result = self
+                .forkchoice_updated_v2(&execution_state)
+                .await
+                .map_err(|e| format!("{e:?}"))?;
+            let payload_id = fork_choice_result
+                .payload_id
+                .ok_or("Failed to get Payload Id")?;
             let json_payload = self
                 .rpc_client
-                .get_json_payload_v1::<MainnetEthSpec>(fork_choice_result.payload_id.unwrap())
+                .get_json_payload_v1::<MainnetEthSpec>(payload_id)
                 .await
-                .unwrap();
-            debug!(
+                .map_err(|e| format!("{e:?}"))?;
+            info!(
                 self.log,
                 "EthStubImpl::get_payload(): eth_payload: {:?}", json_payload
             );
@@ -355,17 +377,18 @@ impl EthPayloadBuilder for EthExecutionClient {
                 panic!("Only Mainnet Spec supported");
             };
 
-            println!(
-                "EXIT newblock get_payload {:?} Height {height:?}",
-                head_block_hash
+            info!(
+                self.log,
+                "EXIT newblock get_payload {:?} Height {height:?}", head_block_hash
             );
 
-            let execution_payload = bincode::serialize(&json_payload).unwrap();
+            let execution_payload =
+                bincode::serialize(&json_payload).expect("Serializable payload");
             let _payload_status = self
                 .rpc_client
                 .new_payload_v1(json_payload.into())
                 .await
-                .unwrap();
+                .map_err(|e| format!("{e:?}"))?;
             self.update_head_block(
                 &mut execution_state,
                 head_block_hash,
@@ -385,16 +408,24 @@ impl EthMessageRouting for EthExecutionClient {
     fn deliver_batch(&self, batch: Vec<EthExecutionDelivery>) {
         self.runtime.block_on(async {
             for entry in batch {
-                self.process_block(entry, BlockProcessing::Finalization)
+                let e = self
+                    .process_block(entry, BlockProcessing::Finalization)
                     .await;
+                if let Err(e) = e {
+                    info!(self.log, "notarization hint deliver failed {e:?}");
+                }
             }
         })
     }
 
     fn notarization_hint(&self, hint: EthExecutionDelivery) {
         self.runtime.block_on(async {
-            self.process_block(hint, BlockProcessing::Notarization)
+            let e = self
+                .process_block(hint, BlockProcessing::Notarization)
                 .await;
+            if let Err(e) = e {
+                info!(self.log, "notarization hint deliver failed {e:?}");
+            }
         })
     }
 }
@@ -418,7 +449,7 @@ impl StateReader for EthExecutionClient {
     fn latest_state_height(&self) -> ic_types::Height {
         self.certification_pending
             .lock()
-            .unwrap()
+            .expect("certification lock acquisition")
             .last_key_value()
             .map_or(Height::from(0), |(height, _)| *height)
     }
@@ -426,7 +457,7 @@ impl StateReader for EthExecutionClient {
     fn latest_certified_height(&self) -> ic_types::Height {
         self.certification_pending
             .lock()
-            .unwrap()
+            .expect("Certification lock acquisition")
             .iter()
             .rev()
             .find(|(_hc, (_he, _hash, certification))| certification.is_some())
@@ -441,7 +472,10 @@ impl StateReader for EthExecutionClient {
         MixedHashTree,
         ic_types::consensus::certification::Certification,
     )> {
-        let cert_pending = self.certification_pending.lock().unwrap();
+        let cert_pending = self
+            .certification_pending
+            .lock()
+            .expect("Certification lock acquisition");
         let (_hc, (_he, hash, certification)) = cert_pending
             .iter()
             .rev()
@@ -449,7 +483,7 @@ impl StateReader for EthExecutionClient {
         Some((
             Arc::from(hash.clone()),
             MixedHashTree::Empty,
-            certification.as_ref().unwrap().clone(),
+            certification.as_ref().expect("Certification").clone(),
         ))
     }
 }
@@ -458,7 +492,7 @@ impl StateManager for EthExecutionClient {
     fn list_state_hashes_to_certify(&self) -> Vec<(Height, CryptoHashOfPartialState)> {
         self.certification_pending
             .lock()
-            .unwrap()
+            .expect("Certification lock acquisition")
             .iter()
             .filter_map(
                 |(consensus_height, (_execution_height, state_root, certification))| {
