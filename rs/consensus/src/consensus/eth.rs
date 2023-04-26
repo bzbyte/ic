@@ -47,6 +47,7 @@ pub trait EthMessageRouting: Send + Sync {
 }
 
 type CertificationMap = BTreeMap<Height, (Height, CryptoHashOfPartialState, Option<Certification>)>;
+const CERTIFICATE_RETENTION_COUNT: usize = 1024;
 
 #[derive(Clone, Copy)]
 struct EthExecutionState {
@@ -153,10 +154,6 @@ impl EthExecutionClient {
         processing: BlockProcessing,
     ) -> Result<(), String> {
         let mut execution_state = self.state.lock().expect("Lock acquisition failed");
-        let mut certification_map = self
-            .certification_pending
-            .lock()
-            .expect("Lock acquisition failed");
 
         let json_payload: GetJsonPayloadResponse<MainnetEthSpec> =
             bincode::deserialize(&execution_delivery.payload.execution_payload)
@@ -211,11 +208,11 @@ impl EthExecutionClient {
         match &processing {
             BlockProcessing::Finalization => {
                 /* queue the state root for certification */
-                let _ = certification_map.entry(consensus_height).or_insert((
+                let _ = self.queue_certification(
+                    consensus_height,
                     execution_height,
                     CryptoHashOfPartialState::from(CryptoHash(state_root)),
-                    None,
-                ));
+                );
 
                 /* update the finalized block - reorg the head if needed */
                 self.update_finalized_block(
@@ -237,6 +234,28 @@ impl EthExecutionClient {
             }
         };
         Ok(())
+    }
+
+    fn queue_certification(
+        &self,
+        consensus_height: Height,
+        execution_height: Height,
+        state_root: CryptoHashOfPartialState,
+    ) {
+        let mut certification_map = self
+            .certification_pending
+            .lock()
+            .expect("Certification lock acquisition");
+        while certification_map.len() >= CERTIFICATE_RETENTION_COUNT {
+            let _drain = certification_map.pop_first();
+        }
+
+        /* only request for certification for the first state root at given height */
+        let _ = certification_map.entry(consensus_height).or_insert((
+            execution_height,
+            state_root,
+            None,
+        ));
     }
 
     fn add_certification(&self, certification: Certification) {
