@@ -47,16 +47,39 @@ if [ $retval -ne 0 ]; then
        return -1
 fi
 
-DEPLOYMENT="${1:-"frz13"}"
-echo $DEPLOYMENT
+DEPLOYMENT="frz13"
+COMPILATON=true
 
 #icprep is build 20.02 container 22.04 has a different openssl version
 #export LD_LIBRARY_PATH=$HOME/wrk/apk/openssl1_1_1/openssl-1.1.1o
 
+while getopts 'sd:h' opt; do
+  case "$opt" in
+    s)
+      COMPILATON=false
+      ;;
+
+    d)
+      DEPLOYMENT="$OPTARG"
+      ;;
+
+    ?|h)
+      echo "Usage: $(basename $0) [-s] [-d deploymentname]"
+      exit 1
+      ;;
+  esac
+done
+shift "$(($OPTIND -1))"
+
+
+echo Deployment $DEPLOYMENT compilation $COMPILATON
+
 cd "$(dirname "$0")"
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 GIT_REVISION=$(git log --format=format:%H  --max-count=1)
-${REPO_ROOT}/gitlab-ci/container/build-ic.sh -i -b -c -d -s
+if $COMPILATON  ; then
+   ${REPO_ROOT}/gitlab-ci/container/build-ic.sh -i -b -c -d -s
+fi
 sudo rm -rf  /var/local/ic/disk/${DEPLOYMENT}/${GIT_REVISION}
 sudo mkdir -p /var/local/ic/disk/${DEPLOYMENT}/${GIT_REVISION}
 sudo cp /wrk/apk/ic/artifacts/icos/disk-img.tar.zst  /var/local/ic/disk/${DEPLOYMENT}/${GIT_REVISION}/
