@@ -246,8 +246,11 @@ impl EthExecutionClient {
             .certification_pending
             .lock()
             .expect("Certification lock acquisition");
-        while certification_map.len() >= CERTIFICATE_RETENTION_COUNT {
-            let _drain = certification_map.pop_first();
+        let len = certification_map.len();
+        if len >= CERTIFICATE_RETENTION_COUNT {
+            (0..(len - CERTIFICATE_RETENTION_COUNT)).for_each(|_| {
+                let _drain = certification_map.pop_first();
+            });
         }
 
         /* only request for certification for the first state root at given height */
