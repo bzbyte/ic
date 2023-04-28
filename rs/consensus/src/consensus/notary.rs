@@ -23,7 +23,10 @@
 //! * A node must not issue new notarization share for any round older than the
 //!   latest round, which would break security if it has already finality-signed
 //!   for that round.
-use crate::consensus::metrics::NotaryMetrics;
+use crate::consensus::{
+    eth::EthMessageRouting,
+    metrics::NotaryMetrics
+};
 use ic_consensus_utils::{
     crypto::ConsensusCrypto,
     find_lowest_ranked_proposals, get_adjusted_notary_delay,
@@ -36,8 +39,9 @@ use ic_logger::{error, trace, warn, ReplicaLogger};
 use ic_metrics::MetricsRegistry;
 use ic_replicated_state::ReplicatedState;
 use ic_types::{
+    eth::EthExecutionDelivery,
     consensus::{
-        Block, BlockProposal, HasBlockHash, HasHeight, HasRank, NotarizationContent,
+        Block, BlockPayload, BlockProposal, HasBlockHash, HasHeight, HasRank, NotarizationContent,
         NotarizationShare, RandomBeacon, Rank,
     },
     replica_config::ReplicaConfig,
@@ -50,6 +54,7 @@ pub struct Notary {
     replica_config: ReplicaConfig,
     membership: Arc<Membership>,
     crypto: Arc<dyn ConsensusCrypto>,
+    eth: Option<Arc<dyn EthMessageRouting>>,
     state_manager: Arc<dyn StateManager<State = ReplicatedState>>,
     log: ReplicaLogger,
     metrics: NotaryMetrics,
@@ -63,6 +68,7 @@ impl Notary {
         crypto: Arc<dyn ConsensusCrypto>,
         state_manager: Arc<dyn StateManager<State = ReplicatedState>>,
         metrics_registry: MetricsRegistry,
+        eth: Option<Arc<dyn EthMessageRouting>>,
         log: ReplicaLogger,
     ) -> Notary {
         Notary {
@@ -72,7 +78,28 @@ impl Notary {
             crypto,
             state_manager,
             log,
+            eth,
             metrics: NotaryMetrics::new(metrics_registry),
+        }
+    }
+
+    fn deliver_notarization_hint(&self, proposal: &BlockProposal) {
+        let block: &Block = proposal.as_ref();
+        let  eth_payload = if block.payload.is_summary() {
+            None
+        } else {
+            let data_payload = BlockPayload::from(block.payload.clone()).into_data();
+            let eth_payload = data_payload.eth.clone();
+            eth_payload
+        };
+
+        if let Some(eth) = &self.eth {
+            if let Some(payload) = eth_payload {
+                eth.notarization_hint(EthExecutionDelivery {
+                    height: block.height.get(),
+                    payload,
+                });
+            }
         }
     }
 
@@ -95,6 +122,7 @@ impl Notary {
                         if let Some(s) = self.notarize_block(pool, block) {
                             self.metrics.report_notarization(block, elapsed);
                             notarization_shares.push(s);
+                            self.deliver_notarization_hint(&proposal);
                         }
                     }
                 }

@@ -364,7 +364,7 @@ impl BlockMaker {
                             self.eth_payload_builder.as_ref()
                         {
                             eth_payload_builder
-                                .get_payload()
+                                .get_payload(height)
                                 .map_err(|err| {
                                     warn!(self.log, "Eth payload construction failed: {:?}", err)
                                 })
