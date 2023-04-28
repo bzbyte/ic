@@ -366,7 +366,7 @@ impl BlockMaker {
                                 batch_payload.xnet.size_bytes(),
                                 batch_payload.ingress.count_bytes(),
                             );
-                            (batch_payload, dealings, ecdsa_data, self.eth_payload()).into()
+                            (batch_payload, dealings, ecdsa_data, self.eth_payload(height)).into()
                         }
                     }
                 }
@@ -389,10 +389,10 @@ impl BlockMaker {
         }
     }
 
-    fn eth_payload(&self) -> Option<EthPayload> {
+    fn eth_payload(&self, height: Height) -> Option<EthPayload> {
         let eth_payload = self.eth_payload_builder.as_ref().and_then(|eth_builder| {
             eth_builder
-                .get_payload()
+                .get_payload(height)
                 .map_err(|err| warn!(self.log, "Eth payload construction failed: {:?}", err))
                 .ok()
                 .flatten()

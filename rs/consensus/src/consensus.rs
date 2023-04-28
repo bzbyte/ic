@@ -182,6 +182,7 @@ impl ConsensusImpl {
                 crypto.clone(),
                 state_manager.clone(),
                 metrics_registry.clone(),
+                Some(eth_message_routing.clone()),
                 logger.clone(),
             ),
             finalizer: Finalizer::new(
