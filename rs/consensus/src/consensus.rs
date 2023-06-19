@@ -23,6 +23,8 @@ pub mod validator;
 
 #[cfg(all(test, feature = "proptest"))]
 mod proptests;
+mod unchainedbeacon;
+mod certificationmap;
 
 use crate::consensus::{
     block_maker::BlockMaker,

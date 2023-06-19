@@ -1,5 +1,15 @@
 //! Eth specific processing.
-
+///
+///   Provides overall context to run a state certified ethereum client.
+///   Context required to run a ethereum client includes the
+///   1. block builder
+///   2. message routing (block routing)
+///   3. state reader/manager for state root certification.
+///
+///   The state reader/manager is further abstracted into its own component
+///   "CertificationMap". The certification map is common between ethereum
+///   client and unchained beacon for Identity based encryption.
+use crate::consensus::certificationmap::CertificationMap;
 use bzb_execution_layer::engine_api::{
     auth::{Auth, JwtKey},
     ethspec::MainnetEthSpec,
@@ -11,20 +21,14 @@ use bzb_execution_layer::engine_api::{
     GetJsonPayloadResponse, PayloadAttributes, PayloadAttributesV1, LATEST_TAG,
 };
 use core::fmt::Debug;
-use ic_crypto_tree_hash::{LabeledTree, MixedHashTree};
 use ic_interfaces_state_manager::{StateManager, StateReader};
-use ic_logger::{debug, info, ReplicaLogger};
+use ic_logger::{info, ReplicaLogger};
 use ic_types::{
-    consensus::certification::Certification,
     crypto::CryptoHash,
     eth::{EthExecutionDelivery, EthPayload},
     CryptoHashOfPartialState, Height,
 };
-
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 use tokio::runtime::Runtime;
 
 /// TODO: A zero secret used for IPC with geth. This needs to change
@@ -46,9 +50,6 @@ pub trait EthMessageRouting: Send + Sync {
     fn notarization_hint(&self, hint: EthExecutionDelivery);
 }
 
-type CertificationMap = BTreeMap<Height, (Height, CryptoHashOfPartialState, Option<Certification>)>;
-const CERTIFICATE_RETENTION_COUNT: usize = 1024;
-
 #[derive(Clone, Copy)]
 struct EthExecutionState {
     fork_choice_state: ForkchoiceState,
@@ -63,8 +64,11 @@ pub struct EthExecutionClient {
     rpc_client: HttpJsonRpc,
     runtime: Runtime,
     log: ReplicaLogger,
-    certification_pending: Arc<Mutex<CertificationMap>>,
     state: Arc<Mutex<EthExecutionState>>,
+
+    certification_pending: Arc<CertificationMap>,
+    state_manager: Arc<dyn StateManager<State = CryptoHashOfPartialState>>,
+    state_reader: Arc<dyn StateReader<State = CryptoHashOfPartialState>>,
 }
 
 enum BlockProcessing {
@@ -128,11 +132,14 @@ impl EthExecutionClient {
             finalized_height: Height::from(finalized_block.map_or(0, |block| block.block_number)),
         });
         let state = Arc::from(state);
+        let certification_pending = Arc::new(CertificationMap::new("eth", log.clone()));
         Self {
             rpc_client,
             runtime,
             log,
-            certification_pending: Default::default(),
+            state_manager: certification_pending.clone(),
+            state_reader: certification_pending.clone(),
+            certification_pending,
             state,
         }
     }
@@ -208,7 +215,7 @@ impl EthExecutionClient {
         match &processing {
             BlockProcessing::Finalization => {
                 /* queue the state root for certification */
-                let _ = self.queue_certification(
+                let _ = self.certification_pending.queue_certification(
                     consensus_height,
                     execution_height,
                     CryptoHashOfPartialState::from(CryptoHash(state_root)),
@@ -234,57 +241,6 @@ impl EthExecutionClient {
             }
         };
         Ok(())
-    }
-
-    fn queue_certification(
-        &self,
-        consensus_height: Height,
-        execution_height: Height,
-        state_root: CryptoHashOfPartialState,
-    ) {
-        let mut certification_map = self
-            .certification_pending
-            .lock()
-            .expect("Certification lock acquisition");
-        let len = certification_map.len();
-        if len >= CERTIFICATE_RETENTION_COUNT {
-            (0..(len - CERTIFICATE_RETENTION_COUNT)).for_each(|_| {
-                let _drain = certification_map.pop_first();
-            });
-        }
-
-        /* only request for certification for the first state root at given height */
-        let _ = certification_map.entry(consensus_height).or_insert((
-            execution_height,
-            state_root,
-            None,
-        ));
-    }
-
-    fn add_certification(&self, certification: Certification) {
-        let mut certification_map = self.certification_pending.lock().expect("Lock acquisition");
-        let consensus_height = certification.height;
-        // Accept the first certificate if the hash matches
-        if let Some((execution_height, state_root, cert_entry)) =
-            certification_map.get_mut(&consensus_height)
-        {
-            if *state_root != certification.signed.content.hash {
-                panic!(
-                    "Invalid ETH state root certification Expected {:?} Got {:?}",
-                    certification.signed.content.hash, state_root
-                );
-            }
-            if cert_entry.is_none() {
-                debug!(
-                    self.log,
-                    "Eth Certification {:?} consensus height {}, Exec height {}",
-                    certification,
-                    consensus_height,
-                    execution_height
-                );
-                cert_entry.replace(certification);
-            }
-        }
     }
 
     /* State update functions */
@@ -434,7 +390,7 @@ impl EthMessageRouting for EthExecutionClient {
                     .process_block(entry, BlockProcessing::Finalization)
                     .await;
                 if let Err(e) = e {
-                    info!(self.log, "notarization hint deliver failed {e:?}");
+                    info!(self.log, "eth finalization delivery failed {e:?}");
                 }
             }
         })
@@ -449,141 +405,6 @@ impl EthMessageRouting for EthExecutionClient {
                 info!(self.log, "notarization hint deliver failed {e:?}");
             }
         })
-    }
-}
-
-impl StateReader for EthExecutionClient {
-    type State = CryptoHashOfPartialState;
-
-    fn get_state_at(
-        &self,
-        _height: ic_types::Height,
-    ) -> ic_interfaces_state_manager::StateManagerResult<
-        ic_interfaces_state_manager::Labeled<Arc<Self::State>>,
-    > {
-        todo!()
-    }
-
-    fn get_latest_state(&self) -> ic_interfaces_state_manager::Labeled<Arc<Self::State>> {
-        todo!()
-    }
-
-    fn latest_state_height(&self) -> ic_types::Height {
-        self.certification_pending
-            .lock()
-            .expect("certification lock acquisition")
-            .last_key_value()
-            .map_or(Height::from(0), |(height, _)| *height)
-    }
-
-    fn latest_certified_height(&self) -> ic_types::Height {
-        self.certification_pending
-            .lock()
-            .expect("Certification lock acquisition")
-            .iter()
-            .rev()
-            .find(|(_hc, (_he, _hash, certification))| certification.is_some())
-            .map_or(Height::from(0), |(hc, (_, _, _))| *hc)
-    }
-
-    fn read_certified_state(
-        &self,
-        _paths: &LabeledTree<()>,
-    ) -> Option<(
-        Arc<Self::State>,
-        MixedHashTree,
-        ic_types::consensus::certification::Certification,
-    )> {
-        let cert_pending = self
-            .certification_pending
-            .lock()
-            .expect("Certification lock acquisition");
-        let (_hc, (_he, hash, certification)) = cert_pending
-            .iter()
-            .rev()
-            .find(|(_hc, (_he, _hash, certification))| certification.is_some())?;
-        Some((
-            Arc::from(hash.clone()),
-            MixedHashTree::Empty,
-            certification.as_ref().expect("Certification").clone(),
-        ))
-    }
-}
-
-impl StateManager for EthExecutionClient {
-    fn list_state_hashes_to_certify(&self) -> Vec<(Height, CryptoHashOfPartialState)> {
-        self.certification_pending
-            .lock()
-            .expect("Certification lock acquisition")
-            .iter()
-            .filter_map(
-                |(consensus_height, (_execution_height, state_root, certification))| {
-                    match certification {
-                        Some(_) => None,
-                        None => Some((Height::from(*consensus_height), state_root.clone())),
-                    }
-                },
-            )
-            .collect()
-    }
-
-    fn deliver_state_certification(&self, certification: Certification) {
-        self.add_certification(certification)
-    }
-
-    fn get_state_hash_at(
-        &self,
-        _height: ic_types::Height,
-    ) -> Result<ic_types::CryptoHashOfState, ic_interfaces_state_manager::StateHashError> {
-        todo!()
-    }
-
-    fn fetch_state(
-        &self,
-        _height: ic_types::Height,
-        _root_hash: ic_types::CryptoHashOfState,
-        _cup_interval_length: ic_types::Height,
-    ) {
-        todo!()
-    }
-
-    fn list_state_heights(
-        &self,
-        _cert_mask: ic_interfaces_state_manager::CertificationMask,
-    ) -> Vec<ic_types::Height> {
-        todo!()
-    }
-
-    fn remove_states_below(&self, _height: ic_types::Height) {
-        todo!()
-    }
-
-    fn remove_inmemory_states_below(&self, _height: ic_types::Height) {
-        todo!()
-    }
-
-    fn commit_and_certify(
-        &self,
-        _state: Self::State,
-        _height: ic_types::Height,
-        _scope: ic_interfaces_state_manager::CertificationScope,
-    ) {
-        todo!()
-    }
-
-    fn take_tip(&self) -> (ic_types::Height, Self::State) {
-        todo!()
-    }
-
-    fn take_tip_at(
-        &self,
-        _height: ic_types::Height,
-    ) -> ic_interfaces_state_manager::StateManagerResult<Self::State> {
-        todo!()
-    }
-
-    fn report_diverged_checkpoint(&self, _height: ic_types::Height) {
-        todo!()
     }
 }
 
@@ -619,5 +440,10 @@ impl EthExecution {
 /// Builds a minimal ethereum stack to be used with certified consensus
 pub fn build_eth(log: ReplicaLogger) -> EthExecution {
     let eth = Arc::new(EthExecutionClient::new("http://localhost:8551", log));
-    EthExecution::new(eth.clone(), eth.clone(), eth.clone(), eth)
+    EthExecution::new(
+        eth.clone(),
+        eth.clone(),
+        eth.state_manager.clone(),
+        eth.state_reader.clone(),
+    )
 }

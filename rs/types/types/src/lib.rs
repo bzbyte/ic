@@ -71,6 +71,7 @@ pub mod chunkable;
 pub mod consensus;
 pub mod crypto;
 pub mod eth;
+pub mod unchainedbeacon;
 pub mod filetree_sync;
 pub mod funds;
 pub mod ingress;

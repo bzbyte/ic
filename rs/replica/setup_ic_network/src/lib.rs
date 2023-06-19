@@ -13,7 +13,6 @@ use ic_artifact_pool::{
     dkg_pool::DkgPoolImpl,
     ecdsa_pool::EcdsaPoolImpl,
     ensure_persistent_pool_replica_version_compatibility,
-    exec_certification_pool::ExecCertificationPoolImpl,
     ingress_pool::{IngressPoolImpl, IngressPrioritizer},
 };
 use ic_config::{artifact_pool::ArtifactPoolConfig, transport::TransportConfig};
@@ -95,7 +94,7 @@ pub struct ArtifactPools {
     ingress_pool: Arc<RwLock<IngressPoolImpl>>,
     pub consensus_pool: Arc<RwLock<ConsensusPoolImpl>>,
     certification_pool: Arc<RwLock<CertificationPoolImpl>>,
-    pub exec_certification_pool: Arc<RwLock<ExecCertificationPoolImpl>>,
+    pub exec_certification_pool: Arc<RwLock<CertificationPoolImpl>>,
     dkg_pool: Arc<RwLock<DkgPoolImpl>>,
     ecdsa_pool: Arc<RwLock<EcdsaPoolImpl>>,
     canister_http_pool: Arc<RwLock<CanisterHttpPoolImpl>>,
@@ -600,11 +599,9 @@ pub fn init_artifact_pools(
         log.clone(),
         registry.clone(),
     )));
-    let exec_certification_pool = Arc::new(RwLock::new(ExecCertificationPoolImpl::new(
-        config,
-        log.clone(),
-        registry.clone(),
-    )));
+    let exec_certification_pool = Arc::new(RwLock::new(
+        CertificationPoolImpl::new_exec_certification_pool(config, log.clone(), registry.clone()),
+    ));
     let dkg_pool = Arc::new(RwLock::new(DkgPoolImpl::new(registry.clone(), log.clone())));
     let canister_http_pool = Arc::new(RwLock::new(CanisterHttpPoolImpl::new(registry, log)));
     ArtifactPools {
