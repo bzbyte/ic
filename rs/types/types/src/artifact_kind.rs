@@ -146,6 +146,49 @@ impl ArtifactKind for ExecCertificationArtifact {
     }
 }
 
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+pub struct UCBCertificationArtifact;
+
+/// `CertificationArtifact` implements the `ArtifactKind` trait.
+impl ArtifactKind for UCBCertificationArtifact {
+    const TAG: ArtifactTag = ArtifactTag::UCBCertificationArtifact;
+    type Id = UCBCertificationMessageId;
+    type Message = UCBCertificationMessage;
+    type Attribute = UCBCertificationMessageAttribute;
+    type Filter = CertificationMessageFilter;
+
+    /// The function converts a `CertificationMessage` into an advert for a
+    /// `CertificationArtifact`.
+    fn message_to_advert(msg: &UCBCertificationMessage) -> Advert<UCBCertificationArtifact> {
+        let (attribute, id) = match &msg.0 {
+            CertificationMessage::Certification(cert) => (
+                UCBCertificationMessageAttribute(CertificationMessageAttribute::Certification(
+                    cert.height,
+                )),
+                UCBCertificationMessageId(CertificationMessageId {
+                    height: cert.height,
+                    hash: CertificationMessageHash::Certification(crypto_hash(cert)),
+                }),
+            ),
+            CertificationMessage::CertificationShare(share) => (
+                UCBCertificationMessageAttribute(
+                    CertificationMessageAttribute::CertificationShare(share.height),
+                ),
+                UCBCertificationMessageId(CertificationMessageId {
+                    height: share.height,
+                    hash: CertificationMessageHash::CertificationShare(crypto_hash(share)),
+                }),
+            ),
+        };
+        Advert {
+            id,
+            attribute,
+            size: bincode::serialized_size(&msg).unwrap() as usize,
+            integrity_hash: crypto_hash(msg).get(),
+        }
+    }
+}
+
 /// The `ArtifactKind` of DKG messages.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct DkgArtifact;

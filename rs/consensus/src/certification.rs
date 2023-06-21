@@ -21,6 +21,8 @@ pub enum CertifierType {
     CONSENSUS,
     /// execution
     EXECUTION,
+    /// unchained beacon
+    UCBEACON,
 }
 
 /// A trait that encompasses all crypto signing/verification interface required

@@ -10,7 +10,7 @@ use crate::{
         ArtifactChunk, ArtifactChunkData, ArtifactErrorCode, ChunkId, Chunkable, ChunkableArtifact,
         CHUNKID_UNIT_CHUNK,
     },
-    consensus::certification::ExecCertificationMessage,
+    consensus::certification::{ExecCertificationMessage, UCBCertificationMessage},
     consensus::{
         certification::CertificationMessage, dkg::Message as DkgMessage, ecdsa::EcdsaMessage,
         ConsensusMessage,
@@ -43,6 +43,7 @@ pub enum SingleChunked {
     Dkg,
     Ecdsa,
     ExecCertification,
+    UCBCertification,
 }
 
 macro_rules! chunkable_artifact_impl {
@@ -75,6 +76,9 @@ chunkable_artifact_impl! {CertificationMessage, |self|
 }
 chunkable_artifact_impl! {ExecCertificationMessage, |self|
     ArtifactChunkData::UnitChunkData(Artifact::ExecCertificationMessage(*self))
+}
+chunkable_artifact_impl! {UCBCertificationMessage, |self|
+    ArtifactChunkData::UnitChunkData(Artifact::UCBCertificationMessage(*self))
 }
 chunkable_artifact_impl! {DkgMessage, |self|
     ArtifactChunkData::UnitChunkData(Artifact::DkgMessage(*self))

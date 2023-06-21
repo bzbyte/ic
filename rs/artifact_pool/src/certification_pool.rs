@@ -364,6 +364,7 @@ impl ValidatedPoolReader<CertificationArtifact> for CertificationPoolImpl {
 
 //------------------------------------------------------------------------------//
 const EXEC_POOL_CERTIFICATION: &str = "exec_certification";
+const UCB_POOL_CERTIFICATION: &str = "ucb_certification";
 use ic_types::{
     artifact::ExecCertificationMessageId, artifact_kind::ExecCertificationArtifact,
     consensus::certification::ExecCertificationMessage,
@@ -431,6 +432,14 @@ impl CertificationPoolImpl {
             EXEC_POOL_CERTIFICATION,
             metrics_registry,
         )
+    }
+
+    pub fn new_ucb_certification_pool(
+        config: ArtifactPoolConfig,
+        log: ReplicaLogger,
+        metrics_registry: MetricsRegistry,
+    ) -> Self {
+        CertificationPoolImpl::new_named_pool(config, log, UCB_POOL_CERTIFICATION, metrics_registry)
     }
 }
 
@@ -618,6 +627,200 @@ impl ValidatedPoolReader<ExecCertificationArtifact> for CertificationPoolImpl {
             .validated_shares()
             .filter(move |share| share.height > Height::from(min_height))
             .map(|share| ExecCertificationMessage(CertificationMessage::CertificationShare(share)));
+        Box::new(all_certs.chain(all_shares))
+    }
+}
+
+//------------------------------------------------------------------------------//
+use ic_types::{
+    artifact::UCBCertificationMessageId, artifact_kind::UCBCertificationArtifact,
+    consensus::certification::UCBCertificationMessage,
+};
+
+impl MutablePool<UCBCertificationArtifact, ChangeSet> for CertificationPoolImpl {
+    fn insert(&mut self, msg: UnvalidatedArtifact<UCBCertificationMessage>) {
+        let height = msg.message.0.height();
+        match &msg.message.0 {
+            CertificationMessage::CertificationShare(share) => {
+                if self.unvalidated_shares.insert(height, share) {
+                    self.unvalidated_pool_metrics
+                        .received_artifact_bytes
+                        .observe(std::mem::size_of_val(share) as f64);
+                }
+            }
+            CertificationMessage::Certification(cert) => {
+                if self.unvalidated_certifications.insert(height, cert) {
+                    self.unvalidated_pool_metrics
+                        .received_artifact_bytes
+                        .observe(std::mem::size_of_val(cert) as f64);
+                }
+            }
+        }
+    }
+
+    fn apply_changes(
+        &mut self,
+        _time_source: &dyn TimeSource,
+        change_set: ChangeSet,
+    ) -> ChangeResult<UCBCertificationArtifact> {
+        let changed = if !change_set.is_empty() {
+            ProcessingResult::StateChanged
+        } else {
+            ProcessingResult::StateUnchanged
+        };
+        let mut adverts = Vec::new();
+        let mut purged = Vec::new();
+        change_set.into_iter().for_each(|action| match action {
+            ChangeAction::AddToValidated(msg) => {
+                adverts.push(UCBCertificationArtifact::message_to_advert(
+                    &UCBCertificationMessage(msg.clone()),
+                ));
+                self.validated_pool_metrics
+                    .received_artifact_bytes
+                    .observe(std::mem::size_of_val(&msg) as f64);
+                self.persistent_pool.insert(msg);
+            }
+
+            ChangeAction::MoveToValidated(msg) => {
+                adverts.push(UCBCertificationArtifact::message_to_advert(
+                    &UCBCertificationMessage(msg.clone()),
+                ));
+                let height = msg.height();
+                match msg {
+                    CertificationMessage::CertificationShare(share) => {
+                        self.unvalidated_shares.remove(height, &share);
+                        self.validated_pool_metrics
+                            .received_artifact_bytes
+                            .observe(std::mem::size_of_val(&share) as f64);
+                        self.persistent_pool
+                            .insert(CertificationMessage::CertificationShare(share));
+                    }
+                    CertificationMessage::Certification(cert) => {
+                        self.unvalidated_certifications.remove(height, &cert);
+                        self.validated_pool_metrics
+                            .received_artifact_bytes
+                            .observe(std::mem::size_of_val(&cert) as f64);
+                        self.insert_validated_certification(cert);
+                    }
+                };
+            }
+
+            ChangeAction::RemoveFromUnvalidated(msg) => {
+                let height = msg.height();
+                match msg {
+                    CertificationMessage::CertificationShare(share) => {
+                        self.unvalidated_shares.remove(height, &share)
+                    }
+                    CertificationMessage::Certification(cert) => {
+                        self.unvalidated_certifications.remove(height, &cert)
+                    }
+                };
+            }
+
+            ChangeAction::RemoveAllBelow(height) => {
+                self.unvalidated_shares.remove_all_below(height);
+                self.unvalidated_certifications.remove_all_below(height);
+                let mut ids: Vec<_> = self
+                    .persistent_pool
+                    .purge_below(height)
+                    .into_iter()
+                    .map(|id| UCBCertificationMessageId(id))
+                    .collect();
+                purged.append(&mut ids);
+            }
+
+            ChangeAction::HandleInvalid(msg, reason) => {
+                self.invalidated_artifacts.inc();
+                warn!(
+                    self.log,
+                    "Exec Invalid certification message ({:?}): {:?}", reason, msg
+                );
+                let height = msg.height();
+                match msg {
+                    CertificationMessage::CertificationShare(share) => {
+                        self.unvalidated_shares.remove(height, &share);
+                    }
+                    CertificationMessage::Certification(cert) => {
+                        self.unvalidated_certifications.remove(height, &cert);
+                    }
+                };
+            }
+        });
+        ChangeResult {
+            purged,
+            adverts,
+            changed,
+        }
+    }
+}
+
+impl ValidatedPoolReader<UCBCertificationArtifact> for CertificationPoolImpl {
+    fn contains(&self, id: &UCBCertificationMessageId) -> bool {
+        // TODO: this is a very inefficient implementation as we compute all hashes
+        // every time.
+        match &id.0.hash {
+            CertificationMessageHash::CertificationShare(hash) => {
+                self.unvalidated_shares
+                    .lookup(id.0.height)
+                    .any(|share| &crypto_hash(share) == hash)
+                    || self
+                        .persistent_pool
+                        .certification_shares()
+                        .get_by_height(id.0.height)
+                        .any(|share| &crypto_hash(&share) == hash)
+            }
+            CertificationMessageHash::Certification(hash) => {
+                self.unvalidated_certifications
+                    .lookup(id.0.height)
+                    .any(|cert| &crypto_hash(cert) == hash)
+                    || self
+                        .persistent_pool
+                        .certifications()
+                        .get_by_height(id.0.height)
+                        .any(|cert| &crypto_hash(&cert) == hash)
+            }
+        }
+    }
+
+    fn get_validated_by_identifier(
+        &self,
+        id: &UCBCertificationMessageId,
+    ) -> Option<UCBCertificationMessage> {
+        match &id.0.hash {
+            CertificationMessageHash::CertificationShare(hash) => self
+                .shares_at_height(id.0.height)
+                .find(|share| &crypto_hash(share) == hash)
+                .map(|share| {
+                    UCBCertificationMessage(CertificationMessage::CertificationShare(share))
+                }),
+            CertificationMessageHash::Certification(hash) => {
+                self.certification_at_height(id.0.height).and_then(|cert| {
+                    if &crypto_hash(&cert) == hash {
+                        Some(UCBCertificationMessage(
+                            CertificationMessage::Certification(cert),
+                        ))
+                    } else {
+                        None
+                    }
+                })
+            }
+        }
+    }
+
+    fn get_all_validated_by_filter(
+        &self,
+        filter: &CertificationMessageFilter,
+    ) -> Box<dyn Iterator<Item = UCBCertificationMessage> + '_> {
+        // Return all validated certifications and all shares above the filter
+        let min_height = filter.height.get();
+        let all_certs = self
+            .validated_certifications()
+            .filter(move |cert| cert.height > Height::from(min_height))
+            .map(|cert| UCBCertificationMessage(CertificationMessage::Certification(cert)));
+        let all_shares = self
+            .validated_shares()
+            .filter(move |share| share.height > Height::from(min_height))
+            .map(|share| UCBCertificationMessage(CertificationMessage::CertificationShare(share)));
         Box::new(all_certs.chain(all_shares))
     }
 }

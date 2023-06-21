@@ -9,6 +9,7 @@ use crate::consensus::dkg as consensus_dkg;
 use crate::consensus::{
     certification::{
         Certification, CertificationContent, CertificationShare, ExecCertificationMessage,
+        UCBCertificationMessage,
     },
     ecdsa::{
         EcdsaComplaintContent, EcdsaMessage, EcdsaOpeningContent, EcdsaSigShare, EcdsaTranscript,
@@ -85,6 +86,8 @@ const DOMAIN_STATE_SYNC_MESSAGE: &str = "state_sync_message_domain";
 const DOMAIN_CONSENSUS_MESSAGE: &str = "consensus_message_domain";
 const DOMAIN_CERTIFICATION_MESSAGE: &str = "certification_message_domain";
 const DOMAIN_EXEC_CERTIFICATION_MESSAGE: &str = "exec_certification_message_domain";
+const DOMAIN_UCB_CERTIFICATION_MESSAGE: &str = "ucb_certification_message_domain";
+
 const DOMAIN_ECDSA_MESSAGE: &str = "ic-threshold-ecdsa-message-domain";
 pub(crate) const DOMAIN_IDKG_DEALING: &str = "ic-idkg-dealing-domain";
 pub(crate) const DOMAIN_SIGNED_IDKG_DEALING: &str = "ic-idkg-signed-dealing-domain";
@@ -180,6 +183,7 @@ mod private {
     impl CryptoHashDomainSeal for ConsensusMessage {}
     impl CryptoHashDomainSeal for CertificationMessage {}
     impl CryptoHashDomainSeal for ExecCertificationMessage {}
+    impl CryptoHashDomainSeal for UCBCertificationMessage {}
 
     impl CryptoHashDomainSeal for EcdsaMessage {}
 
@@ -413,6 +417,12 @@ impl CryptoHashDomain for CertificationMessage {
 impl CryptoHashDomain for ExecCertificationMessage {
     fn domain(&self) -> String {
         DOMAIN_EXEC_CERTIFICATION_MESSAGE.to_string()
+    }
+}
+
+impl CryptoHashDomain for UCBCertificationMessage {
+    fn domain(&self) -> String {
+        DOMAIN_UCB_CERTIFICATION_MESSAGE.to_string()
     }
 }
 

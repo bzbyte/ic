@@ -20,6 +20,7 @@ use crate::consensus::{
     batch_delivery::deliver_batches,
     eth::EthMessageRouting,
     metrics::{BatchStats, BlockStats, FinalizerMetrics},
+    unchainedbeacon::UCBMessageRouting,
 };
 use ic_consensus_utils::{
     crypto::ConsensusCrypto, membership::Membership, pool_reader::PoolReader,
@@ -49,6 +50,7 @@ pub struct Finalizer {
     metrics: FinalizerMetrics,
     prev_finalized_height: RefCell<Height>,
     eth: Option<Arc<dyn EthMessageRouting>>,
+    ucb: Option<Arc<dyn UCBMessageRouting>>,
 }
 
 impl Finalizer {
@@ -61,6 +63,7 @@ impl Finalizer {
         message_routing: Arc<dyn MessageRouting>,
         ingress_selector: Arc<dyn IngressSelector>,
         eth: Option<Arc<dyn EthMessageRouting>>,
+        ucb: Option<Arc<dyn UCBMessageRouting>>,
         log: ReplicaLogger,
         metrics_registry: MetricsRegistry,
     ) -> Self {
@@ -72,6 +75,7 @@ impl Finalizer {
             message_routing,
             ingress_selector,
             eth,
+            ucb,
             log,
             metrics: FinalizerMetrics::new(metrics_registry),
             prev_finalized_height: RefCell::new(Height::from(0)),
@@ -108,6 +112,7 @@ impl Finalizer {
                 self.process_batch_delivery_result(result, block_stats, batch_stats)
             }),
             self.eth.clone(),
+            self.ucb.clone(),
         );
 
         // Try to finalize rounds from finalized_height + 1 up to (and including)

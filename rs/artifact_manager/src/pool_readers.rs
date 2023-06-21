@@ -329,6 +329,84 @@ impl<
     }
 }
 
+/// The unchained beacon certification `ArtifactClient` to be managed by the `ArtifactManager`.
+pub struct UCBCertificationClient<Pool, T> {
+    /// The certification pool, protected by a read-write lock and automatic
+    /// reference counting.
+    pool: Arc<RwLock<Pool>>,
+    /// The `PriorityFnAndFilterProducer` client.
+    priority_fn_and_filter: T,
+}
+
+impl<Pool, T> UCBCertificationClient<Pool, T> {
+    /// The constructor creates a `CertificationClient` instance.
+    pub fn new(pool: Arc<RwLock<Pool>>, priority_fn_and_filter: T) -> Self {
+        Self {
+            pool,
+            priority_fn_and_filter,
+        }
+    }
+}
+
+impl<
+        Pool: ValidatedPoolReader<UCBCertificationArtifact> + Send + Sync,
+        T: PriorityFnAndFilterProducer<UCBCertificationArtifact, Pool> + 'static,
+    > ArtifactClient<UCBCertificationArtifact> for UCBCertificationClient<Pool, T>
+{
+    /// The method checks if the certification pool contains a certification
+    /// message with the given ID.
+    fn has_artifact(&self, msg_id: &UCBCertificationMessageId) -> bool {
+        self.pool.read().unwrap().contains(msg_id)
+    }
+
+    /// The method returns the `CertificationMessage` for the given
+    /// certification message ID if available.
+    fn get_validated_by_identifier(
+        &self,
+        msg_id: &UCBCertificationMessageId,
+    ) -> Option<UCBCertificationMessage> {
+        self.pool
+            .read()
+            .unwrap()
+            .get_validated_by_identifier(msg_id)
+    }
+
+    /// The method returns the certification message filter.
+    fn get_filter(&self) -> CertificationMessageFilter {
+        self.priority_fn_and_filter.get_filter()
+    }
+
+    /// The method returns all adverts for validated certification messages.
+    fn get_all_validated_by_filter(
+        &self,
+        filter: &CertificationMessageFilter,
+    ) -> Vec<Advert<UCBCertificationArtifact>> {
+        self.pool
+            .read()
+            .unwrap()
+            .get_all_validated_by_filter(filter)
+            .map(|msg| UCBCertificationArtifact::message_to_advert(&msg))
+            .collect()
+    }
+
+    /// The method returns the priority function.
+    fn get_priority_function(
+        &self,
+    ) -> PriorityFn<UCBCertificationMessageId, UCBCertificationMessageAttribute> {
+        let pool = &*self.pool.read().unwrap();
+        self.priority_fn_and_filter.get_priority_function(pool)
+    }
+
+    /// The method returns a new (single-chunked) certification tracker,
+    /// ignoring the certification message ID.
+    fn get_chunk_tracker(
+        &self,
+        _id: &UCBCertificationMessageId,
+    ) -> Box<dyn Chunkable + Send + Sync> {
+        Box::new(SingleChunked::UCBCertification)
+    }
+}
+
 /// The DKG client.
 pub struct DkgClient<Pool, T> {
     /// The DKG pool, protected by a read-write lock and automatic reference

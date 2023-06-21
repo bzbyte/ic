@@ -3,6 +3,7 @@
 //! subnets.
 
 use crate::consensus::eth::EthMessageRouting;
+use crate::consensus::unchainedbeacon::UCBMessageRouting;
 use crate::{
     consensus::{
         metrics::{BatchStats, BlockStats},
@@ -34,6 +35,7 @@ use ic_types::{
     },
     eth::EthExecutionDelivery,
     messages::{CallbackId, Payload, RejectContext, Response},
+    unchainedbeacon::UnchainedBeaconDelivery,
     CanisterId, Cycles, Height, PrincipalId, Randomness, ReplicaVersion, SubnetId,
 };
 use std::collections::BTreeMap;
@@ -56,6 +58,60 @@ pub fn deliver_batches(
     max_batch_height_to_deliver: Option<Height>,
     result_processor: Option<&dyn Fn(&Result<(), MessageRoutingError>, BlockStats, BatchStats)>,
     eth: Option<Arc<dyn EthMessageRouting>>,
+    ucb: Option<Arc<dyn UCBMessageRouting>>,
+) -> Result<Height, MessageRoutingError> {
+    // Wrapping the original function as it likes return form n places. We need
+    // post processing for blocks that was successfully delivered.  this post
+    // processing needs to batched as eth block delivery incurs a context
+    // switch. Batching amortizes the context switch.
+    let mut eth_batch = Vec::with_capacity(2);
+    let mut ucb_batch = Vec::with_capacity(2);
+    let ret = deliver_batches_int(
+        message_routing,
+        pool,
+        registry_client,
+        subnet_id,
+        current_replica_version,
+        log,
+        max_batch_height_to_deliver,
+        result_processor,
+        &mut eth_batch,
+        &mut ucb_batch,
+    );
+
+    if !eth_batch.is_empty() {
+        if let Some(eth) = eth {
+            eth.deliver_batch(eth_batch);
+        }
+    }
+
+    if !ucb_batch.is_empty() {
+        if let Some(ucb) = ucb {
+            ucb.deliver_batch(ucb_batch);
+        }
+    }
+
+    ret
+}
+
+/// Deliver all finalized blocks from
+/// `message_routing.expected_batch_height` to `finalized_height` via
+/// `MessageRouting` and return the last delivered batch height.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn deliver_batches_int(
+    message_routing: &dyn MessageRouting,
+    pool: &PoolReader<'_>,
+    registry_client: &dyn RegistryClient,
+    subnet_id: SubnetId,
+    current_replica_version: ReplicaVersion,
+    log: &ReplicaLogger,
+    // This argument should only be used by the ic-replay tool. If it is set to `None`, we will
+    // deliver all batches until the finalized height. If it is set to `Some(h)`, we will
+    // deliver all bathes up to the height `min(h, finalized_height)`.
+    max_batch_height_to_deliver: Option<Height>,
+    result_processor: Option<&dyn Fn(&Result<(), MessageRoutingError>, BlockStats, BatchStats)>,
+    eth_batch: &mut Vec<EthExecutionDelivery>,
+    ucb_batch: &mut Vec<UnchainedBeaconDelivery>,
 ) -> Result<Height, MessageRoutingError> {
     let finalized_height = pool.get_finalized_height();
     // If `max_batch_height_to_deliver` is specified and smaller than
@@ -69,7 +125,6 @@ pub fn deliver_batches(
         return Ok(Height::from(0));
     }
     let mut last_delivered_batch_height = h.decrement();
-    let mut eth_batch = Vec::new();
     while h <= target_height {
         match (pool.get_finalized_block(h), pool.get_random_tape(h)) {
             (Some(block), Some(tape)) => {
@@ -170,14 +225,16 @@ pub fn deliver_batches(
                 if let Err(err) = result {
                     warn!(every_n_seconds => 5, log, "Batch delivery failed: {:?}", err);
                     return Err(err);
-                } else {
-                    if let Some(eth) = eth_payload {
-                        eth_batch.push(EthExecutionDelivery {
-                            height: h.get(),
-                            payload: eth,
-                        });
-                    }
                 }
+                //--------------ETH and UCB batch delivery-------------------///
+                if let Some(eth) = eth_payload {
+                    eth_batch.push(EthExecutionDelivery {
+                        height: h.get(),
+                        payload: eth,
+                    });
+                }
+                ucb_batch.push(UnchainedBeaconDelivery { height: h.get() });
+                //--------------ETH and UCB batch delivery-------------------///
                 last_delivered_batch_height = h;
                 h = h.increment();
             }
@@ -197,11 +254,6 @@ pub fn deliver_batches(
                 );
                 break;
             }
-        }
-    }
-    if !eth_batch.is_empty() {
-        if let Some(eth) = eth {
-            eth.deliver_batch(eth_batch);
         }
     }
     Ok(last_delivered_batch_height)

@@ -21,10 +21,10 @@ mod share_aggregator;
 mod status;
 pub mod validator;
 
+mod certificationmap;
 #[cfg(all(test, feature = "proptest"))]
 mod proptests;
-mod unchainedbeacon;
-mod certificationmap;
+pub mod unchainedbeacon;
 
 use crate::consensus::{
     block_maker::BlockMaker,
@@ -79,7 +79,10 @@ use std::{
 };
 use strum_macros::AsRefStr;
 
-use self::eth::{EthMessageRouting, EthPayloadBuilder};
+use self::{
+    eth::{EthMessageRouting, EthPayloadBuilder},
+    unchainedbeacon::UCBMessageRouting,
+};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, AsRefStr)]
 #[strum(serialize_all = "snake_case")]
@@ -151,6 +154,7 @@ impl ConsensusImpl {
         local_store_time_reader: Arc<dyn LocalStoreCertifiedTimeReader>,
         eth_payload_builder: Arc<dyn EthPayloadBuilder>,
         eth_message_routing: Arc<dyn EthMessageRouting>,
+        ucb_message_routing: Arc<dyn UCBMessageRouting>,
     ) -> Self {
         let payload_builder = Arc::new(PayloadBuilderImpl::new(
             replica_config.subnet_id,
@@ -195,6 +199,7 @@ impl ConsensusImpl {
                 message_routing.clone(),
                 ingress_selector,
                 Some(eth_message_routing),
+                Some(ucb_message_routing),
                 logger.clone(),
                 metrics_registry.clone(),
             ),
@@ -640,6 +645,7 @@ pub fn setup(
     registry_poll_delay_duration_ms: u64,
     eth_payload_builder: Arc<dyn EthPayloadBuilder>,
     eth_message_routing: Arc<dyn EthMessageRouting>,
+    ucb_message_routing: Arc<dyn UCBMessageRouting>,
 ) -> (ConsensusImpl, ConsensusGossipImpl) {
     // Currently, the orchestrator polls the registry every
     // `registry_poll_delay_duration_ms` and writes new updates into the
@@ -675,6 +681,7 @@ pub fn setup(
             local_store_time_reader,
             eth_payload_builder,
             eth_message_routing,
+            ucb_message_routing,
         ),
         ConsensusGossipImpl::new(message_routing, metrics_registry),
     )

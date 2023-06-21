@@ -24,7 +24,7 @@ use ic_replica_setup_ic_network::{
 };
 use ic_replicated_state::ReplicatedState;
 use ic_state_manager::{state_sync::StateSync, StateManagerImpl};
-use ic_types::{consensus::CatchUpPackage, NodeId, SubnetId};
+use ic_types::{consensus::CatchUpPackage, unchainedbeacon, NodeId, SubnetId};
 use ic_xnet_endpoint::{XNetEndpoint, XNetEndpointConfig};
 use ic_xnet_payload_builder::XNetPayloadBuilderImpl;
 use std::sync::Arc;
@@ -61,7 +61,7 @@ pub fn construct_ic_stack(
     Vec<Box<dyn JoinGuard>>,
     // TODO: remove this return value since it is used only in tests
     IngressIngestionService,
-    XNetEndpoint
+    XNetEndpoint,
 )> {
     // ---------- ARTIFACT POOLS DEPS FOLLOW ----------
     create_consensus_pool_dir(&config);
@@ -247,6 +247,9 @@ pub fn construct_ic_stack(
     );
     let eth_execution = ic_consensus::consensus::eth::build_eth(log.clone());
     let eth_state_reader = eth_execution.eth_state_reader.clone();
+    let unchained_beacon =
+        ic_consensus::consensus::unchainedbeacon::build_unchained_beacon(log.clone());
+    let unchainedbeacon_state_reader = unchained_beacon.ub_state_reader.clone();
 
     let (ingress_ingestion_service, p2p_runner) = create_networking_stack(
         metrics_registry,
@@ -277,6 +280,7 @@ pub fn construct_ic_stack(
         canister_http_adapter_client,
         config.nns_registry_replicator.poll_delay_duration_ms,
         eth_execution,
+        unchained_beacon,
     );
     // ---------- PUBLIC ENDPOINT DEPS FOLLOW ----------
     ic_http_endpoints_public::start_server(

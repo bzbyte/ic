@@ -463,6 +463,46 @@ pub fn create_execcertification_handlers<
     )
 }
 
+// Create UCB CertificationHandlers
+pub fn create_ucbcertification_handlers<
+    PoolCertification: MutablePool<UCBCertificationArtifact, CertificationChangeSet>
+        + ValidatedPoolReader<UCBCertificationArtifact>
+        + Send
+        + Sync
+        + 'static,
+    C: ChangeSetProducer<PoolCertification, ChangeSet = CertificationChangeSet> + 'static,
+    G: PriorityFnAndFilterProducer<UCBCertificationArtifact, PoolCertification> + 'static,
+    S: Fn(Advert<UCBCertificationArtifact>) + Send + 'static,
+>(
+    send_advert: S,
+    (certifier, certifier_gossip): (C, G),
+    time_source: Arc<SysTimeSource>,
+    certification_pool: Arc<RwLock<PoolCertification>>,
+    metrics_registry: MetricsRegistry,
+) -> (
+    ArtifactClientHandle<UCBCertificationArtifact>,
+    Box<dyn JoinGuard>,
+) {
+    let client = processors::Processor::new(certification_pool.clone(), Box::new(certifier));
+    let (jh, sender) = run_artifact_processor(
+        time_source.clone(),
+        metrics_registry,
+        Box::new(client),
+        send_advert,
+    );
+    (
+        ArtifactClientHandle::<UCBCertificationArtifact> {
+            sender,
+            pool_reader: Box::new(pool_readers::UCBCertificationClient::new(
+                certification_pool,
+                certifier_gossip,
+            )),
+            time_source,
+        },
+        jh,
+    )
+}
+
 pub fn create_dkg_handlers<
     PoolDkg: MutablePool<DkgArtifact, DkgChangeSet>
         + Send

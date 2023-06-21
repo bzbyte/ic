@@ -384,6 +384,9 @@ impl EthPayloadBuilder for EthExecutionClient {
 
 impl EthMessageRouting for EthExecutionClient {
     fn deliver_batch(&self, batch: Vec<EthExecutionDelivery>) {
+        if batch.is_empty() {
+            return;
+        }
         self.runtime.block_on(async {
             for entry in batch {
                 let e = self

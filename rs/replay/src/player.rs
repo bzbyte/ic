@@ -654,6 +654,7 @@ impl Player {
                 replay_target_height,
                 None,
                 None,
+                None
             ) {
                 Ok(h) => break h,
                 Err(MessageRoutingError::QueueIsFull) => std::thread::sleep(WAIT_DURATION),

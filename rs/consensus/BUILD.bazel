@@ -9,6 +9,7 @@ DEPENDENCIES = [
     "//rs/config",
     "//rs/consensus/utils",
     "//rs/crypto",
+    "//rs/crypto/sha",
     "//rs/crypto/test_utils/canister_threshold_sigs",
     "//rs/interfaces",
     "//rs/interfaces/registry",
