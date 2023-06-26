@@ -24,7 +24,7 @@ use ic_replica_setup_ic_network::{
 };
 use ic_replicated_state::ReplicatedState;
 use ic_state_manager::{state_sync::StateSync, StateManagerImpl};
-use ic_types::{consensus::CatchUpPackage, unchainedbeacon, NodeId, SubnetId};
+use ic_types::{consensus::CatchUpPackage, NodeId, SubnetId};
 use ic_xnet_endpoint::{XNetEndpoint, XNetEndpointConfig};
 use ic_xnet_payload_builder::XNetPayloadBuilderImpl;
 use std::sync::Arc;
@@ -249,7 +249,7 @@ pub fn construct_ic_stack(
     let eth_state_reader = eth_execution.eth_state_reader.clone();
     let unchained_beacon =
         ic_consensus::consensus::unchainedbeacon::build_unchained_beacon(log.clone());
-    let unchainedbeacon_state_reader = unchained_beacon.ub_state_reader.clone();
+    let ucb_state_reader = unchained_beacon.ub_state_reader.clone();
 
     let (ingress_ingestion_service, p2p_runner) = create_networking_stack(
         metrics_registry,
@@ -292,6 +292,7 @@ pub fn construct_ic_stack(
         execution_services.async_query_handler,
         Arc::clone(&state_manager) as Arc<_>,
         eth_state_reader,
+        ucb_state_reader,
         registry,
         Arc::clone(&crypto) as Arc<_>,
         Arc::clone(&crypto) as Arc<_>,
@@ -309,6 +310,6 @@ pub fn construct_ic_stack(
         execution_services.sync_query_handler,
         p2p_runner,
         ingress_ingestion_service,
-        xnet_endpoint
+        xnet_endpoint,
     ))
 }

@@ -25,6 +25,7 @@ pub(crate) enum ApiReqType {
     PprofFlamegraph,
     InvalidArgument,
     ExecStatus,
+    UCBStatus,
 }
 
 #[derive(Debug, Copy, Clone, IntoStaticStr)]
